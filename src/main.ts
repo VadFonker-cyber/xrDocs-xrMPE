@@ -3,6 +3,7 @@ import hljs from 'highlight.js';
 import './styles.css';
 
 type Lang = 'ru' | 'en';
+type Theme = 'dark' | 'light';
 
 type DocMeta = {
   title: string;
@@ -145,8 +146,10 @@ const state = {
   search: '',
   lang: initialRoute.lang,
   activeId: initialRoute.id || getDocsByLang(initialRoute.lang)[0]?.id || docs[0].id,
+  theme: readTheme(),
 };
 
+document.documentElement.dataset.theme = state.theme;
 renderShell();
 render();
 
@@ -331,6 +334,11 @@ function renderShell(): void {
           <button type="button" data-lang="en">EN</button>
         </div>
 
+        <div class="theme-switch" role="group" aria-label="Theme">
+          <button type="button" data-theme="dark" aria-label="Dark theme" title="Dark theme">●</button>
+          <button type="button" data-theme="light" aria-label="Light theme" title="Light theme">○</button>
+        </div>
+
         <div class="search-panel">
           <label class="search">
             <span class="search-icon" aria-hidden="true"></span>
@@ -384,6 +392,13 @@ function renderShell(): void {
       switchLanguage(nextLang);
     });
   });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-theme]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextTheme = button.dataset.theme as Theme;
+      switchTheme(nextTheme);
+    });
+  });
 }
 
 function render(): void {
@@ -403,6 +418,7 @@ function render(): void {
   const copy = labels[state.lang];
   localStorage.setItem('xrDocsLang', state.lang);
   document.documentElement.lang = state.lang;
+  document.documentElement.dataset.theme = state.theme;
   document.title = `${activeDoc.meta.title} | xrDocs`;
 
   setText('#pageKicker', copy.kicker);
@@ -422,6 +438,10 @@ function render(): void {
 
   document.querySelectorAll<HTMLButtonElement>('[data-lang]').forEach((button) => {
     button.setAttribute('aria-pressed', String(button.dataset.lang === state.lang));
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-theme]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.theme === state.theme));
   });
 
   const article = document.querySelector<HTMLElement>('#docArticle');
@@ -653,6 +673,17 @@ function switchLanguage(nextLang: Lang): void {
   render();
 }
 
+function switchTheme(nextTheme: Theme): void {
+  if (nextTheme === state.theme) {
+    return;
+  }
+
+  state.theme = nextTheme;
+  localStorage.setItem('xrDocsTheme', nextTheme);
+  document.documentElement.dataset.theme = nextTheme;
+  render();
+}
+
 function getDocsByLang(lang: Lang): Doc[] {
   return docs.filter((doc) => doc.lang === lang);
 }
@@ -673,6 +704,10 @@ function readRoute(): Route {
     lang: savedLang,
     id: value,
   };
+}
+
+function readTheme(): Theme {
+  return localStorage.getItem('xrDocsTheme') === 'light' ? 'light' : 'dark';
 }
 
 function rewriteDocLinks(html: string, currentLang: Lang): string {
