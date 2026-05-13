@@ -320,7 +320,7 @@ function renderShell(): void {
     <div class="layout">
       <aside class="sidebar" aria-label="${copy.ariaNav}">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true"></div>
+          <img class="brand-mark" src="./xrdocs-icon.png" alt="" aria-hidden="true" />
           <div>
             <div class="brand-title">xrDocs</div>
             <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>

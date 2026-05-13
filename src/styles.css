@@ -98,12 +98,10 @@ a {
 .brand-mark {
   width: 42px;
   height: 42px;
-  border: 2px solid var(--accent);
-  background:
-    linear-gradient(45deg, transparent 45%, var(--accent) 45% 55%, transparent 55%),
-    radial-gradient(circle at 50% 50%, var(--surface-strong) 0 34%, transparent 35%),
-    var(--surface-soft);
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  object-fit: cover;
   flex: 0 0 auto;
 }
 
