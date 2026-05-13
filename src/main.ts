@@ -52,7 +52,6 @@ const labels: Record<Lang, Record<string, string>> = {
     ariaNav: 'Навигация по документации',
     ariaInfo: 'Информация о документе',
     search: 'Поиск по базе',
-    clearSearch: 'Очистить поиск',
     searchResults: 'Результаты поиска',
     kicker: 'Markdown база знаний',
     file: 'Файл',
@@ -68,7 +67,6 @@ const labels: Record<Lang, Record<string, string>> = {
     ariaNav: 'Documentation navigation',
     ariaInfo: 'Document information',
     search: 'Search knowledge base',
-    clearSearch: 'Clear search',
     searchResults: 'Search results',
     kicker: 'Markdown knowledge base',
     file: 'File',
@@ -329,22 +327,11 @@ function renderShell(): void {
           </div>
         </div>
 
-        <div class="language-switch" role="group" aria-label="Language">
-          <button type="button" data-lang="ru">RU</button>
-          <button type="button" data-lang="en">EN</button>
-        </div>
-
-        <div class="theme-switch" role="group" aria-label="Theme">
-          <button type="button" data-theme="dark" aria-label="Dark theme" title="Dark theme">●</button>
-          <button type="button" data-theme="light" aria-label="Light theme" title="Light theme">○</button>
-        </div>
-
         <div class="search-panel">
           <label class="search">
             <span class="search-icon" aria-hidden="true"></span>
             <input id="searchInput" type="search" placeholder="${copy.search}" autocomplete="off" />
           </label>
-          <button id="clearSearch" class="clear-search" type="button" aria-label="${copy.clearSearch}" title="${copy.clearSearch}">x</button>
         </div>
 
         <nav id="docNav" class="doc-nav"></nav>
@@ -355,11 +342,15 @@ function renderShell(): void {
           <div>
             <div id="pageKicker" class="kicker">${copy.kicker}</div>
           </div>
-          <a class="github-link" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.38-3.37-1.38-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.93.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.96c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.16 10.16 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-            </svg>
-          </a>
+          <div class="topbar-controls">
+            <button id="languageToggle" class="control-button" type="button" aria-label="Switch language"></button>
+            <button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme" title="Switch theme"></button>
+            <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.38-3.37-1.38-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.93.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.96c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.16 10.16 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
+              </svg>
+            </a>
+          </div>
         </section>
 
         <section class="content-grid">
@@ -374,30 +365,12 @@ function renderShell(): void {
     renderNav();
   });
 
-  document.querySelector<HTMLButtonElement>('#clearSearch')?.addEventListener('click', () => {
-    state.search = '';
-    const input = document.querySelector<HTMLInputElement>('#searchInput');
-
-    if (input) {
-      input.value = '';
-      input.focus();
-    }
-
-    renderNav();
+  document.querySelector<HTMLButtonElement>('#languageToggle')?.addEventListener('click', () => {
+    switchLanguage(state.lang === 'ru' ? 'en' : 'ru');
   });
 
-  document.querySelectorAll<HTMLButtonElement>('[data-lang]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const nextLang = button.dataset.lang as Lang;
-      switchLanguage(nextLang);
-    });
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('[data-theme]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const nextTheme = button.dataset.theme as Theme;
-      switchTheme(nextTheme);
-    });
+  document.querySelector<HTMLButtonElement>('#themeToggle')?.addEventListener('click', () => {
+    switchTheme(state.theme === 'dark' ? 'light' : 'dark');
   });
 }
 
@@ -429,20 +402,7 @@ function render(): void {
     searchInput.value = state.search;
   }
 
-  const clearSearch = document.querySelector<HTMLButtonElement>('#clearSearch');
-  if (clearSearch) {
-    clearSearch.hidden = state.search.trim().length === 0;
-    clearSearch.setAttribute('aria-label', copy.clearSearch);
-    clearSearch.title = copy.clearSearch;
-  }
-
-  document.querySelectorAll<HTMLButtonElement>('[data-lang]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(button.dataset.lang === state.lang));
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('[data-theme]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(button.dataset.theme === state.theme));
-  });
+  renderTopbarControls();
 
   const article = document.querySelector<HTMLElement>('#docArticle');
   if (article) {
@@ -450,6 +410,36 @@ function render(): void {
   }
 
   renderNav();
+}
+
+function renderTopbarControls(): void {
+  const languageToggle = document.querySelector<HTMLButtonElement>('#languageToggle');
+  if (languageToggle) {
+    languageToggle.textContent = state.lang.toUpperCase();
+    languageToggle.title = state.lang === 'ru' ? 'Switch to English' : 'Switch to Russian';
+  }
+
+  const themeToggle = document.querySelector<HTMLButtonElement>('#themeToggle');
+  if (themeToggle) {
+    themeToggle.innerHTML = getThemeIcon(state.theme);
+    themeToggle.title = state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+  }
+}
+
+function getThemeIcon(theme: Theme): string {
+  if (theme === 'dark') {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M20.2 14.4A7.7 7.7 0 0 1 9.6 3.8 8.5 8.5 0 1 0 20.2 14.4Z" />
+      </svg>
+    `;
+  }
+
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm0-3a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 17a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM3 11h1a1 1 0 1 1 0 2H3a1 1 0 1 1 0-2Zm17 0h1a1 1 0 1 1 0 2h-1a1 1 0 1 1 0-2ZM5.64 4.22l.7.7A1 1 0 1 1 4.93 6.34l-.7-.7a1 1 0 0 1 1.41-1.42Zm13.43 13.43.7.7a1 1 0 0 1-1.41 1.42l-.7-.7a1 1 0 0 1 1.41-1.42ZM19.78 5.64l-.7.7a1 1 0 0 1-1.42-1.41l.7-.7a1 1 0 0 1 1.42 1.41ZM6.34 19.07l-.7.7a1 1 0 0 1-1.42-1.41l.7-.7a1 1 0 0 1 1.42 1.41Z" />
+    </svg>
+  `;
 }
 
 function renderNav(): void {
@@ -508,7 +498,6 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
 
   if (!results.length) {
     nav.innerHTML = `<p class="empty">${labels[state.lang].empty}</p>`;
-    updateClearSearchVisibility();
     return;
   }
 
@@ -531,7 +520,6 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
     </section>
   `;
 
-  updateClearSearchVisibility();
 }
 
 function getSearchResults(query: string): SearchResult[] {
@@ -645,14 +633,6 @@ function highlightCode(source: string, language: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function updateClearSearchVisibility(): void {
-  const clearSearch = document.querySelector<HTMLButtonElement>('#clearSearch');
-
-  if (clearSearch) {
-    clearSearch.hidden = state.search.trim().length === 0;
-  }
 }
 
 function switchLanguage(nextLang: Lang): void {
