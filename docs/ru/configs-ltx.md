@@ -1,8 +1,6 @@
 ---
-title: LTX-конфиги
 section: Конфиги
 order: 1
-tags: ltx, tuning, balance
 summary: Практичный подход к редактированию геймплейных параметров.
 ---
 

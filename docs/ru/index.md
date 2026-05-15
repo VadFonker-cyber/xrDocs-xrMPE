@@ -1,8 +1,6 @@
 ---
-title: Быстрый старт
 section: Основы
 order: 1
-tags: workflow, github pages, markdown
 summary: Как добавить материалы и собрать статический сайт.
 ---
 
@@ -18,10 +16,8 @@ summary: Как добавить материалы и собрать стати
 
 ```md
 ---
-title: Баллистика оружия
 section: Оружие
 order: 10
-tags: weapons, configs
 summary: Параметры точности, отдачи и урона.
 ---
 

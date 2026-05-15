@@ -1,8 +1,6 @@
 ---
-title: Структура аддона
 section: Основы
 order: 2
-tags: gamedata, configs, meshes, textures
 summary: Базовая раскладка папок для модификации.
 ---
 

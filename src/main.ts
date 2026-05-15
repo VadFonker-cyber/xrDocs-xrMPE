@@ -6,10 +6,8 @@ type Lang = 'ru' | 'en';
 type Theme = 'dark' | 'light';
 
 type DocMeta = {
-  title: string;
   section: string;
   order: number;
-  tags: string[];
   summary: string;
 };
 
@@ -17,6 +15,7 @@ type Doc = {
   id: string;
   lang: Lang;
   path: string;
+  title: string;
   content: string;
   meta: DocMeta;
 };
@@ -101,10 +100,8 @@ if (docs.length === 0) {
       '../docs/ru/start.md',
       [
         '---',
-        'title: Старт',
         'section: База',
         'order: 1',
-        'tags: markdown',
         `summary: ${labels.ru.fallbackSummary}`,
         '---',
         '',
@@ -117,10 +114,8 @@ if (docs.length === 0) {
       '../docs/en/start.md',
       [
         '---',
-        'title: Start',
         'section: Basics',
         'order: 1',
-        'tags: markdown',
         `summary: ${labels.en.fallbackSummary}`,
         '---',
         '',
@@ -170,13 +165,12 @@ function createDoc(path: string, raw: string): Doc {
     id,
     lang,
     path: cleanPath,
+    title: extractTitle(content) || labels[lang].untitled,
     content,
     meta: {
-      title: labels[lang].untitled,
       summary: '',
       ...meta,
       section: navEntry?.section || String(meta.section || labels[lang].defaultSection),
-      tags: Array.isArray(meta.tags) ? meta.tags : splitTags(String(meta.tags || '')),
       order: navEntry?.order ?? Number(meta.order || 999),
     },
   };
@@ -202,7 +196,7 @@ function compareDocs(a: Doc, b: Doc): number {
     return a.meta.order - b.meta.order;
   }
 
-  return a.meta.title.localeCompare(b.meta.title, a.lang);
+  return a.title.localeCompare(b.title, a.lang);
 }
 
 function createNavConfig(files: Record<string, string>): NavConfig {
@@ -289,7 +283,7 @@ function parseFrontmatter(raw: string): { meta: Partial<DocMeta>; content: strin
 
   const block = raw.slice(3, end).trim();
   const content = raw.slice(end + 4).replace(/^\s+/, '');
-  const meta: Record<string, string | string[]> = {};
+  const meta: Record<string, string> = {};
 
   for (const line of block.split('\n')) {
     const separator = line.indexOf(':');
@@ -300,17 +294,15 @@ function parseFrontmatter(raw: string): { meta: Partial<DocMeta>; content: strin
 
     const key = line.slice(0, separator).trim();
     const value = line.slice(separator + 1).trim();
-    meta[key] = key === 'tags' ? splitTags(value) : value;
+    meta[key] = value;
   }
 
   return { meta: meta as Partial<DocMeta>, content };
 }
 
-function splitTags(value: string): string[] {
-  return value
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+function extractTitle(content: string): string {
+  const heading = content.match(/^#\s+(.+)$/m);
+  return heading ? heading[1].trim() : '';
 }
 
 function renderShell(): void {
@@ -392,7 +384,7 @@ function render(): void {
   localStorage.setItem('xrDocsLang', state.lang);
   document.documentElement.lang = state.lang;
   document.documentElement.dataset.theme = state.theme;
-  document.title = `${activeDoc.meta.title} | xrDocs`;
+  document.title = `${activeDoc.title} | xrDocs`;
 
   setText('#pageKicker', copy.kicker);
 
@@ -472,7 +464,7 @@ function renderNav(): void {
 
           return `
             <a class="doc-link" href="#/${doc.lang}/${doc.id}"${active}>
-              <span>${escapeHtml(doc.meta.title)}</span>
+              <span>${escapeHtml(doc.title)}</span>
               <small>${escapeHtml(doc.meta.summary || doc.path)}</small>
             </a>
           `;
@@ -510,7 +502,7 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
 
           return `
             <a class="doc-link search-result" href="#/${doc.lang}/${doc.id}"${active}>
-              <span>${highlight(doc.meta.title, query, state.lang)}</span>
+              <span>${highlight(doc.title, query, state.lang)}</span>
               <small>${escapeHtml(doc.meta.section)} · ${escapeHtml(doc.path)}</small>
               <p>${highlight(excerpt, query, state.lang)}</p>
             </a>
@@ -532,10 +524,9 @@ function getSearchResults(query: string): SearchResult[] {
 
   return getDocsByLang(state.lang)
     .map((doc) => {
-      const title = normalizeSearch(doc.meta.title, state.lang);
+      const title = normalizeSearch(doc.title, state.lang);
       const section = normalizeSearch(doc.meta.section, state.lang);
       const summary = normalizeSearch(doc.meta.summary, state.lang);
-      const tags = normalizeSearch(doc.meta.tags.join(' '), state.lang);
       const content = normalizeSearch(stripMarkdown(doc.content), state.lang);
       let score = 0;
 
@@ -546,10 +537,6 @@ function getSearchResults(query: string): SearchResult[] {
 
         if (section.includes(term)) {
           score += 35;
-        }
-
-        if (tags.includes(term)) {
-          score += 30;
         }
 
         if (summary.includes(term)) {

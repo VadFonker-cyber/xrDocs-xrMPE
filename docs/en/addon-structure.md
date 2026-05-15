@@ -1,8 +1,6 @@
 ---
-title: Addon Structure
 section: Basics
 order: 2
-tags: gamedata, configs, meshes, textures
 summary: Basic folder layout for a modification.
 ---
 

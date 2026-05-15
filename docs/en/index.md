@@ -1,8 +1,6 @@
 ---
-title: Quick Start
 section: Basics
 order: 1
-tags: workflow, github pages, markdown
 summary: How to add pages and build the static site.
 ---
 
@@ -18,10 +16,8 @@ This site collects Markdown files from `docs/ru` for the Russian version and `do
 
 ```md
 ---
-title: Weapon Ballistics
 section: Weapons
 order: 10
-tags: weapons, configs
 summary: Accuracy, recoil, and damage parameters.
 ---
 

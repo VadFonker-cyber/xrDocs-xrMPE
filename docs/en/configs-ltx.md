@@ -1,8 +1,6 @@
 ---
-title: LTX Configs
 section: Configs
 order: 1
-tags: ltx, tuning, balance
 summary: A practical approach to editing gameplay parameters.
 ---
 
