@@ -57,6 +57,7 @@ const labels: Record<Lang, Record<string, string>> = {
     section: 'Раздел',
     materials: 'Материалы',
     empty: 'Ничего не найдено.',
+    menu: 'Меню',
     untitled: 'Без названия',
     defaultSection: 'Материалы',
     fallbackSummary: 'Добавьте Markdown-файлы в docs/ru или docs/en.',
@@ -72,6 +73,7 @@ const labels: Record<Lang, Record<string, string>> = {
     section: 'Section',
     materials: 'Documents',
     empty: 'No results found.',
+    menu: 'Menu',
     untitled: 'Untitled',
     defaultSection: 'Materials',
     fallbackSummary: 'Add Markdown files to docs/ru or docs/en.',
@@ -139,6 +141,7 @@ const state = {
   search: '',
   lang: initialRoute.lang,
   activeId: initialRoute.id || getDocsByLang(initialRoute.lang)[0]?.id || docs[0].id,
+  navOpen: false,
   theme: readTheme(),
 };
 
@@ -309,7 +312,8 @@ function renderShell(): void {
   const copy = labels[state.lang];
 
   appRoot.innerHTML = `
-    <div class="layout">
+    <div class="layout" data-nav-open="false">
+      <button id="navOverlay" class="nav-overlay" type="button" aria-label="Close navigation"></button>
       <aside class="sidebar" aria-label="${copy.ariaNav}">
         <div class="brand">
           <img class="brand-mark" src="./xrdocs-icon.png" alt="" aria-hidden="true" />
@@ -335,6 +339,10 @@ function renderShell(): void {
             <div id="pageKicker" class="kicker">${copy.kicker}</div>
           </div>
           <div class="topbar-controls">
+            <button id="navToggle" class="control-button nav-toggle" type="button" aria-label="${copy.menu}" aria-expanded="false">
+              <span class="menu-icon" aria-hidden="true"></span>
+              <span>${copy.menu}</span>
+            </button>
             <button id="languageToggle" class="control-button" type="button" aria-label="Switch language"></button>
             <button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme" title="Switch theme"></button>
             <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
@@ -357,12 +365,26 @@ function renderShell(): void {
     renderNav();
   });
 
+  document.querySelector<HTMLButtonElement>('#navToggle')?.addEventListener('click', () => {
+    setNavOpen(!state.navOpen);
+  });
+
+  document.querySelector<HTMLButtonElement>('#navOverlay')?.addEventListener('click', () => {
+    setNavOpen(false);
+  });
+
   document.querySelector<HTMLButtonElement>('#languageToggle')?.addEventListener('click', () => {
     switchLanguage(state.lang === 'ru' ? 'en' : 'ru');
   });
 
   document.querySelector<HTMLButtonElement>('#themeToggle')?.addEventListener('click', () => {
     switchTheme(state.theme === 'dark' ? 'light' : 'dark');
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      setNavOpen(false);
+    }
   });
 }
 
@@ -385,6 +407,7 @@ function render(): void {
   document.documentElement.lang = state.lang;
   document.documentElement.dataset.theme = state.theme;
   document.title = `${activeDoc.title} | xrDocs`;
+  setNavOpen(state.navOpen);
 
   setText('#pageKicker', copy.kicker);
 
@@ -409,6 +432,15 @@ function renderTopbarControls(): void {
   if (languageToggle) {
     languageToggle.textContent = state.lang.toUpperCase();
     languageToggle.title = state.lang === 'ru' ? 'Switch to English' : 'Switch to Russian';
+  }
+
+  const navToggle = document.querySelector<HTMLButtonElement>('#navToggle');
+  if (navToggle) {
+    navToggle.setAttribute('aria-label', labels[state.lang].menu);
+    const label = navToggle.querySelector('span:last-child');
+    if (label) {
+      label.textContent = labels[state.lang].menu;
+    }
   }
 
   const themeToggle = document.querySelector<HTMLButtonElement>('#themeToggle');
@@ -483,6 +515,12 @@ function renderNav(): void {
   if (!getDocsByLang(state.lang).length) {
     nav.innerHTML = `<p class="empty">${labels[state.lang].empty}</p>`;
   }
+
+  nav.querySelectorAll<HTMLAnchorElement>('a.doc-link').forEach((link) => {
+    link.addEventListener('click', () => {
+      setNavOpen(false);
+    });
+  });
 }
 
 function renderSearchResults(nav: HTMLElement, query: string): void {
@@ -512,6 +550,11 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
     </section>
   `;
 
+  nav.querySelectorAll<HTMLAnchorElement>('a.doc-link').forEach((link) => {
+    link.addEventListener('click', () => {
+      setNavOpen(false);
+    });
+  });
 }
 
 function getSearchResults(query: string): SearchResult[] {
@@ -649,6 +692,12 @@ function switchTheme(nextTheme: Theme): void {
   localStorage.setItem('xrDocsTheme', nextTheme);
   document.documentElement.dataset.theme = nextTheme;
   render();
+}
+
+function setNavOpen(open: boolean): void {
+  state.navOpen = open;
+  document.querySelector<HTMLElement>('.layout')?.setAttribute('data-nav-open', String(open));
+  document.querySelector<HTMLButtonElement>('#navToggle')?.setAttribute('aria-expanded', String(open));
 }
 
 function getDocsByLang(lang: Lang): Doc[] {
