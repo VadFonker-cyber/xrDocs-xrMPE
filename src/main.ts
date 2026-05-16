@@ -64,7 +64,6 @@ const labels: Record<Lang, Record<string, string>> = {
     ariaInfo: 'Информация о документе',
     search: 'Поиск по базе',
     searchResults: 'Результаты поиска',
-    kicker: 'Markdown база знаний',
     file: 'Файл',
     section: 'Раздел',
     materials: 'Материалы',
@@ -80,7 +79,6 @@ const labels: Record<Lang, Record<string, string>> = {
     ariaInfo: 'Document information',
     search: 'Search knowledge base',
     searchResults: 'Search results',
-    kicker: 'Markdown knowledge base',
     file: 'File',
     section: 'Section',
     materials: 'Documents',
@@ -366,9 +364,6 @@ function renderShell(): void {
 
       <main class="workspace">
         <section class="topbar">
-          <div>
-            <div id="pageKicker" class="kicker">${copy.kicker}</div>
-          </div>
           <div class="topbar-controls">
             <button id="navToggle" class="control-button nav-toggle" type="button" aria-label="${copy.menu}" aria-expanded="false">
               <span class="menu-icon" aria-hidden="true"></span>
@@ -440,8 +435,6 @@ function render(): void {
   document.title = `${activeDoc.title} | xrDocs`;
   updateDocumentMeta(activeDoc);
   setNavOpen(state.navOpen);
-
-  setText('#pageKicker', copy.kicker);
 
   const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
   if (searchInput) {
@@ -898,14 +891,6 @@ function assetExists(src: string): Promise<boolean> {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-function setText(selector: string, value: string): void {
-  const element = document.querySelector(selector);
-
-  if (element) {
-    element.textContent = value;
-  }
 }
 
 function escapeHtml(value: string): string {

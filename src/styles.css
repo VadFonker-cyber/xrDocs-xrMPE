@@ -117,7 +117,6 @@ a {
 }
 
 .brand-subtitle,
-.kicker,
 .doc-link small {
   color: var(--muted);
   font-size: 0.76rem;
@@ -240,7 +239,7 @@ mark {
 .topbar {
   display: flex;
   align-items: end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 24px;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--border);
@@ -264,7 +263,7 @@ h1 {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .control-button,
@@ -414,6 +413,8 @@ h1 {
 
 .doc-article pre {
   overflow: auto;
+  max-width: 100%;
+  margin: 16px 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--code-bg);
@@ -623,8 +624,8 @@ h1 {
   }
 
   .topbar-controls {
-    justify-content: flex-start;
-    width: 100%;
+    justify-content: flex-end;
+    width: auto;
   }
 
   .content-grid {
