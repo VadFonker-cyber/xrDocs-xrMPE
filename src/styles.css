@@ -343,7 +343,7 @@ h1 {
 
 .doc-article {
   min-width: 0;
-  max-width: 980px;
+  max-width: 1280px;
   color: var(--text);
   font-size: 1rem;
   line-height: 1.7;

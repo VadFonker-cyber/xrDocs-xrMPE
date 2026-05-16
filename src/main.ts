@@ -38,7 +38,9 @@ type SearchResult = {
 
 type NavConfig = Record<Lang, Map<string, NavEntry>>;
 
-const githubUrl = 'https://github.com/VadFonker/xrDocs';
+const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
+const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
+const themeAssetCache = new Map<string, Promise<boolean>>();
 
 const markdownFiles = import.meta.glob('../docs/{ru,en}/**/*.md', {
   query: '?raw',
@@ -88,6 +90,25 @@ const md = new MarkdownIt({
   langPrefix: 'language-',
   highlight: highlightCode,
 });
+
+const defaultImageRule = md.renderer.rules.image;
+
+md.renderer.rules.image = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  const srcIndex = token.attrIndex('src');
+
+  if (srcIndex >= 0) {
+    const src = token.attrs?.[srcIndex]?.[1] || '';
+
+    if (isThemeAssetSrc(src)) {
+      token.attrSet('data-theme-asset-base', normalizeThemeAssetSrc(src));
+    }
+  }
+
+  return defaultImageRule
+    ? defaultImageRule(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+};
 
 const navConfig = createNavConfig(markdownFiles);
 
@@ -316,7 +337,7 @@ function renderShell(): void {
       <button id="navOverlay" class="nav-overlay" type="button" aria-label="Close navigation"></button>
       <aside class="sidebar" aria-label="${copy.ariaNav}">
         <div class="brand">
-          <img class="brand-mark" src="./xrdocs-icon.png" alt="" aria-hidden="true" />
+          <img class="brand-mark" src="./xrdocs-icon.png" data-theme-asset-base="./xrdocs-icon.png" alt="" aria-hidden="true" />
           <div>
             <div class="brand-title">xrDocs</div>
             <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>
@@ -425,6 +446,7 @@ function render(): void {
   }
 
   renderNav();
+  updateThemeAssets(appRoot);
 }
 
 function renderTopbarControls(): void {
@@ -735,6 +757,110 @@ function rewriteDocLinks(html: string, currentLang: Lang): string {
 
     return `href="#/${currentLang}/${normalized}"`;
   });
+}
+
+function updateThemeAssets(root: ParentNode): void {
+  root.querySelectorAll<HTMLImageElement>('img[data-theme-asset-base]').forEach((image) => {
+    const baseSrc = image.dataset.themeAssetBase;
+
+    if (!baseSrc) {
+      return;
+    }
+
+    const requestKey = `${state.theme}:${baseSrc}`;
+    image.dataset.themeAssetRequest = requestKey;
+
+    resolveThemeAssetSrc(baseSrc, state.theme).then((nextSrc) => {
+      if (image.dataset.themeAssetRequest !== requestKey) {
+        return;
+      }
+
+      if (image.getAttribute('src') !== nextSrc) {
+        image.setAttribute('src', nextSrc);
+      }
+    });
+  });
+}
+
+async function resolveThemeAssetSrc(baseSrc: string, theme: Theme): Promise<string> {
+  const candidates = createThemeAssetCandidates(baseSrc, theme);
+
+  for (const candidate of candidates) {
+    if (await assetExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return baseSrc;
+}
+
+function createThemeAssetCandidates(baseSrc: string, theme: Theme): string[] {
+  const fallbackTheme = theme === 'dark' ? 'light' : 'dark';
+
+  return unique([
+    createThemeAssetSrc(baseSrc, theme),
+    createThemeAssetSrc(baseSrc, fallbackTheme),
+    baseSrc,
+  ]);
+}
+
+function createThemeAssetSrc(baseSrc: string, theme: Theme): string {
+  const { path, suffix } = splitAssetSrc(baseSrc);
+  const extension = new RegExp(`\\.(${themeAssetExtensions})$`, 'i');
+
+  if (!extension.test(path)) {
+    return baseSrc;
+  }
+
+  return `${path.replace(extension, `.${theme}.$1`)}${suffix}`;
+}
+
+function normalizeThemeAssetSrc(src: string): string {
+  const { path, suffix } = splitAssetSrc(src);
+  const themedSuffix = new RegExp(`\\.(dark|light)(\\.(${themeAssetExtensions}))$`, 'i');
+
+  return `${path.replace(themedSuffix, '$2')}${suffix}`;
+}
+
+function splitAssetSrc(src: string): { path: string; suffix: string } {
+  const match = src.match(/^([^?#]+)([?#].*)?$/);
+
+  return {
+    path: match?.[1] || src,
+    suffix: match?.[2] || '',
+  };
+}
+
+function isThemeAssetSrc(src: string): boolean {
+  const { path } = splitAssetSrc(src);
+  const external = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src);
+  const extension = new RegExp(`\\.(${themeAssetExtensions})$`, 'i');
+
+  return !external && extension.test(path);
+}
+
+function assetExists(src: string): Promise<boolean> {
+  const cacheKey = new URL(src, document.baseURI).href;
+  const cached = themeAssetCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const request = fetch(src, { method: 'HEAD', cache: 'force-cache' })
+    .then((response) => {
+      const contentType = response.headers.get('content-type') || '';
+
+      return response.ok && !contentType.includes('text/html');
+    })
+    .catch(() => false);
+
+  themeAssetCache.set(cacheKey, request);
+  return request;
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function setText(selector: string, value: string): void {
