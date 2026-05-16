@@ -41,6 +41,16 @@ type NavConfig = Record<Lang, Map<string, NavEntry>>;
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
 const themeAssetCache = new Map<string, Promise<boolean>>();
+const siteMeta: Record<Lang, { description: string; locale: string }> = {
+  ru: {
+    description: 'Документация по моддингу S.T.A.L.K.E.R. для xrMPE.',
+    locale: 'ru_RU',
+  },
+  en: {
+    description: 'S.T.A.L.K.E.R. modding documentation for xrMPE.',
+    locale: 'en_US',
+  },
+};
 
 const markdownFiles = import.meta.glob('../docs/{ru,en}/**/*.md', {
   query: '?raw',
@@ -428,6 +438,7 @@ function render(): void {
   document.documentElement.lang = state.lang;
   document.documentElement.dataset.theme = state.theme;
   document.title = `${activeDoc.title} | xrDocs`;
+  updateDocumentMeta(activeDoc);
   setNavOpen(state.navOpen);
 
   setText('#pageKicker', copy.kicker);
@@ -757,6 +768,32 @@ function rewriteDocLinks(html: string, currentLang: Lang): string {
 
     return `href="#/${currentLang}/${normalized}"`;
   });
+}
+
+function updateDocumentMeta(doc: Doc): void {
+  const title = `${doc.title} | xrDocs`;
+  const description = [doc.meta.summary, siteMeta[doc.lang].description]
+    .filter(Boolean)
+    .join(' ');
+
+  setMetaContent('name', 'description', description);
+  setMetaContent('property', 'og:title', title);
+  setMetaContent('property', 'og:description', description);
+  setMetaContent('property', 'og:locale', siteMeta[doc.lang].locale);
+  setMetaContent('name', 'twitter:title', title);
+  setMetaContent('name', 'twitter:description', description);
+}
+
+function setMetaContent(attribute: 'name' | 'property', value: string, content: string): void {
+  let element = document.querySelector<HTMLMetaElement>(`meta[${attribute}="${value}"]`);
+
+  if (!element) {
+    element = document.createElement('meta');
+    element.setAttribute(attribute, value);
+    document.head.append(element);
+  }
+
+  element.content = content;
 }
 
 function updateThemeAssets(root: ParentNode): void {
