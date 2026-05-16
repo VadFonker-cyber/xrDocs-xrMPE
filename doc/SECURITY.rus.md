@@ -1,6 +1,6 @@
 # Политика безопасности
 
-[English](../.github/SECURITY.md)
+[English](/.github/SECURITY.md) | Русский
 
 ## Поддерживаемые версии
 

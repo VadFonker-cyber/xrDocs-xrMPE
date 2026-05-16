@@ -1,6 +1,6 @@
 # Список изменений
 
-[English](../.github/CHANGELOG.md)
+[English](/.github/CHANGELOG.md) | Русский
 
 В этом файле документируются значимые изменения проекта.
 

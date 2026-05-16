@@ -1,6 +1,6 @@
 # Руководство по участию
 
-[English](../.github/CONTRIBUTING.md)
+[English](/.github/CONTRIBUTING.md) | Русский
 
 Спасибо за интерес к xrDocs. Проект принимает исправления документации, новые материалы, улучшения навигации, поиск, стили и инфраструктурные правки.
 
@@ -67,4 +67,4 @@ CI автоматически запускает production-сборку для 
 
 ## Поведение
 
-Участвуя в проекте, соблюдайте [doc/CODE_OF_CONDUCT.rus.md](CODE_OF_CONDUCT.rus.md).
+Участвуя в проекте, соблюдайте [doc/CODE_OF_CONDUCT.rus.md](/doc/CODE_OF_CONDUCT.rus.md).

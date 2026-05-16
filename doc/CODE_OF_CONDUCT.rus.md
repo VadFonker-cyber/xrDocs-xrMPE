@@ -1,6 +1,6 @@
 # Правила поведения
 
-[English](../.github/CODE_OF_CONDUCT.md)
+[English](/.github/CODE_OF_CONDUCT.md) | Русский
 
 ## Наши стандарты
 

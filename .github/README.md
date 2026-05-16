@@ -6,7 +6,7 @@
   <p>
     English
     |
-    <a href="../doc/README.rus.md">Русский</a>
+    <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/blob/main/doc/README.rus.md">Русский</a>
   </p>
 
   <p>
@@ -14,7 +14,7 @@
   </p>
 
   <p>
-    <a href="../LICENSE">
+    <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
     </a>
     <a href="https://vite.dev/">
@@ -135,12 +135,12 @@ The `.github/workflows/pages.yml` workflow builds the project on pushes to `main
 
 ## Changelog
 
-All significant changes are documented in [.github/CHANGELOG.md](CHANGELOG.md).
+All significant changes are documented in [.github/CHANGELOG.md](/.github/CHANGELOG.md).
 
 ## Contributing
 
-Read [.github/CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Use GitHub Issues for bug reports and proposals.
+Read [.github/CONTRIBUTING.md](/.github/CONTRIBUTING.md) before making changes. Use GitHub Issues for bug reports and proposals.
 
 ## License
 
-Code and documentation are licensed under the [MIT License](../LICENSE).
+Code and documentation are licensed under the [MIT License](/LICENSE).

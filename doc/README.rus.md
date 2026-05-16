@@ -4,7 +4,7 @@
   <h4>Статический сайт документации по моддингу <i>S.T.A.L.K.E.R.</i></h4>
 
   <p>
-    <a href="../.github/README.md">English</a>
+    <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/blob/main/.github/README.md">English</a>
     |
     Русский
   </p>
@@ -14,7 +14,7 @@
   </p>
 
   <p>
-    <a href="../LICENSE">
+    <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="Лицензия" />
     </a>
     <a href="https://vite.dev/">
@@ -135,12 +135,12 @@ Workflow `.github/workflows/pages.yml` собирает проект на push �
 
 ## Список изменений
 
-Значимые изменения документируются в [doc/CHANGELOG.rus.md](CHANGELOG.rus.md).
+Значимые изменения документируются в [doc/CHANGELOG.rus.md](/doc/CHANGELOG.rus.md).
 
 ## Участие
 
-Перед изменениями прочитайте [doc/CONTRIBUTING.rus.md](CONTRIBUTING.rus.md). Для отчетов об ошибках и предложений используйте GitHub Issues.
+Перед изменениями прочитайте [doc/CONTRIBUTING.rus.md](/doc/CONTRIBUTING.rus.md). Для отчетов об ошибках и предложений используйте GitHub Issues.
 
 ## Лицензия
 
-Код и документация распространяются по лицензии [MIT](../LICENSE). Неофициальный русский перевод находится в [doc/LICENSE.rus.md](LICENSE.rus.md).
+Код и документация распространяются по лицензии [MIT](/LICENSE). Неофициальный русский перевод находится в [doc/LICENSE.rus.md](/doc/LICENSE.rus.md).

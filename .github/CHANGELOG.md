@@ -1,6 +1,6 @@
 # Changelog
 
-[Русский](../doc/CHANGELOG.rus.md)
+English | [Русский](/doc/CHANGELOG.rus.md)
 
 All notable changes to this project are documented in this file.
 

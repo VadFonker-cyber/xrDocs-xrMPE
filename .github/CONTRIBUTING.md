@@ -1,6 +1,6 @@
 # Contributing Guide
 
-[Русский](../doc/CONTRIBUTING.rus.md)
+English | [Русский](/doc/CONTRIBUTING.rus.md)
 
 Thank you for your interest in xrDocs. The project accepts documentation fixes, new articles, navigation improvements, search updates, styling changes, and infrastructure work.
 
@@ -67,4 +67,4 @@ Use short, clear commit messages such as `Add English addon guide` or `Fix searc
 
 ## Conduct
 
-By participating, follow [.github/CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+By participating, follow [.github/CODE_OF_CONDUCT.md](/.github/CODE_OF_CONDUCT.md).

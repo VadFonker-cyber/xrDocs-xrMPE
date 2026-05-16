@@ -1,6 +1,6 @@
 # Поддержка
 
-[English](../.github/SUPPORT.md)
+[English](/.github/SUPPORT.md) | Русский
 
 Используйте GitHub Issues для:
 
