@@ -53,7 +53,7 @@ xrDocs is a static documentation site for S.T.A.L.K.E.R. modding. Content is wri
 
 Requirements:
 
-- Node.js 22 or newer
+- Node.js 24 or newer
 - npm
 - Windows PowerShell or another terminal
 
