@@ -22,7 +22,7 @@ This page shows the content elements supported by the documentation: local image
 
 ## Table
 
-Column alignment is controlled by the separator row: `:---` aligns left, `:---:` centers, and `---:` aligns right.
+Column alignment is controlled by the separator row: `:---` aligns left, `:---:` centers, and `---:` aligns right. If a column should be aligned without wrapping text, add `{nowrap}` to its header.
 
 | Element | Markdown | Use case |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ Column alignment is controlled by the separator row: `:---` aligns left, `:---:`
 | Inline code | `` `gamedata/configs` `` | Paths, section names, commands |
 | Code block | fenced code block | XML, LTX, Lua, and other snippets |
 
-| Left | Center | Right |
+| Left | Center | Right {nowrap} |
 | :--- | :---: | ---: |
 | `sv_host_name` | `0/1` | `100` |
 | `g_spawn` | `section` | `1 500` |

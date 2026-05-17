@@ -1,4 +1,6 @@
 import MarkdownIt from 'markdown-it';
+import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
+import type Token from 'markdown-it/lib/token.mjs';
 import hljs from 'highlight.js/lib/core';
 import ini from 'highlight.js/lib/languages/ini';
 import markdown from 'highlight.js/lib/languages/markdown';
@@ -110,6 +112,8 @@ hljs.registerLanguage('text', plaintext);
 hljs.registerLanguage('plaintext', plaintext);
 hljs.registerLanguage('xml', xml);
 
+md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
+
 const defaultImageRule = md.renderer.rules.image;
 
 (['th_open', 'td_open'] as const).forEach((ruleName) => {
@@ -146,6 +150,109 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     ? defaultImageRule(tokens, index, options, env, self)
     : self.renderToken(tokens, index, options);
 };
+
+function applyTableColumnOptions(state: StateCore): void {
+  const tokens = state.tokens;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].type !== 'table_open') {
+      continue;
+    }
+
+    const tableEnd = findClosingToken(tokens, index, 'table_close');
+    if (tableEnd === -1) {
+      continue;
+    }
+
+    applyTableNowrapColumns(tokens, index, tableEnd);
+    index = tableEnd;
+  }
+}
+
+function applyTableNowrapColumns(tokens: Token[], tableStart: number, tableEnd: number): void {
+  const nowrapColumns = new Set<number>();
+  let headerColumn = 0;
+  let insideHeaderRow = false;
+
+  for (let index = tableStart; index < tableEnd; index += 1) {
+    const token = tokens[index];
+
+    if (token.type === 'thead_close') {
+      break;
+    }
+
+    if (token.type === 'tr_open') {
+      insideHeaderRow = true;
+      headerColumn = 0;
+      continue;
+    }
+
+    if (insideHeaderRow && token.type === 'tr_close') {
+      insideHeaderRow = false;
+      continue;
+    }
+
+    if (!insideHeaderRow || token.type !== 'th_open') {
+      continue;
+    }
+
+    const inline = tokens[index + 1];
+    if (inline?.type === 'inline' && stripNowrapMarker(inline)) {
+      nowrapColumns.add(headerColumn);
+    }
+
+    headerColumn += 1;
+  }
+
+  if (!nowrapColumns.size) {
+    return;
+  }
+
+  let column = 0;
+
+  for (let index = tableStart; index < tableEnd; index += 1) {
+    const token = tokens[index];
+
+    if (token.type === 'tr_open') {
+      column = 0;
+      continue;
+    }
+
+    if (token.type !== 'th_open' && token.type !== 'td_open') {
+      continue;
+    }
+
+    if (nowrapColumns.has(column)) {
+      token.attrSet('data-nowrap', 'true');
+    }
+
+    column += 1;
+  }
+}
+
+function stripNowrapMarker(token: Token): boolean {
+  const marker = /\s*\{nowrap\}\s*/g;
+  const original = token.content;
+  token.content = token.content.replace(marker, ' ').replace(/\s{2,}/g, ' ').trim();
+
+  token.children?.forEach((child) => {
+    if (child.type === 'text') {
+      child.content = child.content.replace(marker, ' ').replace(/\s{2,}/g, ' ').trim();
+    }
+  });
+
+  return token.content !== original;
+}
+
+function findClosingToken(tokens: Token[], start: number, closingType: string): number {
+  for (let index = start + 1; index < tokens.length; index += 1) {
+    if (tokens[index].type === closingType) {
+      return index;
+    }
+  }
+
+  return -1;
+}
 
 const navConfig = createNavConfig(markdownFiles);
 

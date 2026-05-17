@@ -414,6 +414,17 @@ h1 {
   text-align: right;
 }
 
+.doc-article th[data-align],
+.doc-article td[data-align] {
+  overflow-wrap: anywhere;
+}
+
+.doc-article th[data-nowrap="true"],
+.doc-article td[data-nowrap="true"] {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 .doc-article td img,
 .doc-article th img {
   max-width: 240px;
