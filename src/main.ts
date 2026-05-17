@@ -1,5 +1,9 @@
 import MarkdownIt from 'markdown-it';
-import hljs from 'highlight.js';
+import hljs from 'highlight.js/lib/core';
+import ini from 'highlight.js/lib/languages/ini';
+import markdown from 'highlight.js/lib/languages/markdown';
+import plaintext from 'highlight.js/lib/languages/plaintext';
+import xml from 'highlight.js/lib/languages/xml';
 import './styles.css';
 
 type Lang = 'ru' | 'en';
@@ -99,7 +103,32 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 
+hljs.registerLanguage('ini', ini);
+hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('text', plaintext);
+hljs.registerLanguage('plaintext', plaintext);
+hljs.registerLanguage('xml', xml);
+
 const defaultImageRule = md.renderer.rules.image;
+
+(['th_open', 'td_open'] as const).forEach((ruleName) => {
+  const defaultRule = md.renderer.rules[ruleName];
+
+  md.renderer.rules[ruleName] = (tokens, index, options, env, self) => {
+    const token = tokens[index];
+    const style = token.attrGet('style') || '';
+    const alignment = style.match(/text-align\s*:\s*(left|center|right)/i)?.[1]?.toLowerCase();
+
+    if (alignment) {
+      token.attrSet('data-align', alignment);
+    }
+
+    return defaultRule
+      ? defaultRule(tokens, index, options, env, self)
+      : self.renderToken(tokens, index, options);
+  };
+});
 
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];

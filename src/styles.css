@@ -399,6 +399,21 @@ h1 {
   vertical-align: top;
 }
 
+.doc-article th[data-align="left"],
+.doc-article td[data-align="left"] {
+  text-align: left;
+}
+
+.doc-article th[data-align="center"],
+.doc-article td[data-align="center"] {
+  text-align: center;
+}
+
+.doc-article th[data-align="right"],
+.doc-article td[data-align="right"] {
+  text-align: right;
+}
+
 .doc-article td img,
 .doc-article th img {
   max-width: 240px;

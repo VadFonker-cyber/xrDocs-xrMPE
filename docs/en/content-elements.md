@@ -22,11 +22,18 @@ This page shows the content elements supported by the documentation: local image
 
 ## Table
 
+Column alignment is controlled by the separator row: `:---` aligns left, `:---:` centers, and `---:` aligns right.
+
 | Element | Markdown | Use case |
 | --- | --- | --- |
 | Image | `![Description](./assets/examples/xrdocs-icon.png)` | Screenshots, diagrams, previews |
 | Inline code | `` `gamedata/configs` `` | Paths, section names, commands |
 | Code block | fenced code block | XML, LTX, Lua, and other snippets |
+
+| Left | Center | Right |
+| :--- | :---: | ---: |
+| `sv_host_name` | `0/1` | `100` |
+| `g_spawn` | `section` | `1 500` |
 
 ## Gallery
 
