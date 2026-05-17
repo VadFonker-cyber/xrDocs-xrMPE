@@ -6,6 +6,7 @@ import ini from 'highlight.js/lib/languages/ini';
 import markdown from 'highlight.js/lib/languages/markdown';
 import plaintext from 'highlight.js/lib/languages/plaintext';
 import xml from 'highlight.js/lib/languages/xml';
+import { collectEvent, collectPageView, initStatistics } from './statistics';
 import './styles.css';
 
 type Lang = 'ru' | 'en';
@@ -255,6 +256,9 @@ function findClosingToken(tokens: Token[], start: number, closingType: string): 
 }
 
 const navConfig = createNavConfig(markdownFiles);
+let lastCollectedPage = '';
+let searchStatisticsTimer: number | undefined;
+let lastCollectedSearch = '';
 
 let docs = Object.entries(markdownFiles)
   .filter(([path]) => !isInitFile(path))
@@ -311,6 +315,7 @@ const state = {
 };
 
 document.documentElement.dataset.theme = state.theme;
+initStatistics();
 renderShell();
 render();
 
@@ -587,6 +592,51 @@ function render(): void {
 
   renderNav();
   updateThemeAssets(appRoot);
+  collectCurrentPage(activeDoc);
+}
+
+function collectCurrentPage(doc: Doc): void {
+  const path = `${location.pathname}${location.search}#/${doc.lang}/${doc.id}`;
+  const key = `${doc.lang}:${doc.id}:${doc.title}`;
+
+  if (key === lastCollectedPage) {
+    return;
+  }
+
+  lastCollectedPage = key;
+  collectPageView({
+    lang: doc.lang,
+    path,
+    title: `${doc.title} | xrDocs`,
+  });
+}
+
+function scheduleSearchStatistics(query: string, resultCount: number): void {
+  const normalizedQuery = query.trim();
+
+  if (searchStatisticsTimer !== undefined) {
+    window.clearTimeout(searchStatisticsTimer);
+    searchStatisticsTimer = undefined;
+  }
+
+  if (normalizedQuery.length < 2) {
+    return;
+  }
+
+  searchStatisticsTimer = window.setTimeout(() => {
+    const key = `${state.lang}:${normalizedQuery.toLocaleLowerCase(state.lang)}`;
+
+    if (key === lastCollectedSearch) {
+      return;
+    }
+
+    lastCollectedSearch = key;
+    collectEvent('search', {
+      lang: state.lang,
+      query_length: normalizedQuery.length,
+      results: resultCount,
+    });
+  }, 600);
 }
 
 function renderTopbarControls(): void {
@@ -687,6 +737,7 @@ function renderNav(): void {
 
 function renderSearchResults(nav: HTMLElement, query: string): void {
   const results = getSearchResults(query);
+  scheduleSearchStatistics(query, results.length);
 
   if (!results.length) {
     nav.innerHTML = `<p class="empty">${labels[state.lang].empty}</p>`;
@@ -832,6 +883,7 @@ function switchLanguage(nextLang: Lang): void {
     return;
   }
 
+  const previousLang = state.lang;
   const nextDocs = getDocsByLang(nextLang);
   const nextDoc = nextDocs.find((doc) => doc.id === state.activeId) || nextDocs[0];
 
@@ -842,6 +894,10 @@ function switchLanguage(nextLang: Lang): void {
   state.lang = nextLang;
   state.activeId = nextDoc.id;
   history.pushState(null, '', `#/${nextLang}/${nextDoc.id}`);
+  collectEvent('language_switch', {
+    from: previousLang,
+    to: nextLang,
+  });
   render();
 }
 
@@ -853,6 +909,9 @@ function switchTheme(nextTheme: Theme): void {
   state.theme = nextTheme;
   localStorage.setItem('xrDocsTheme', nextTheme);
   document.documentElement.dataset.theme = nextTheme;
+  collectEvent('theme_switch', {
+    theme: nextTheme,
+  });
   render();
 }
 

@@ -18,6 +18,6 @@ echo Starting xrDocs dev server...
 echo Browser will open automatically.
 echo.
 
-call npm.cmd run dev -- --port 5173
+call npm run dev -- --port 5173
 
 pause
