@@ -23,13 +23,6 @@
     <a href="https://www.typescriptlang.org/">
       <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6.svg?logo=typescript&logoColor=white" alt="TypeScript" />
     </a>
-    <a href="https://pages.github.com/">
-      <img src="https://img.shields.io/badge/GitHub%20Pages-ready-222222.svg?logo=github&logoColor=white" alt="GitHub Pages" />
-    </a>
-    <br />
-    <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/actions/workflows/ci.yml">
-      <img src="https://github.com/VadFonker-cyber/xrDocs-xrMPE/actions/workflows/ci.yml/badge.svg" alt="CI" />
-    </a>
     <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/actions/workflows/pages.yml">
       <img src="https://github.com/VadFonker-cyber/xrDocs-xrMPE/actions/workflows/pages.yml/badge.svg" alt="Deploy Pages" />
     </a>
