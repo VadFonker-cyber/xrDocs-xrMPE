@@ -46,6 +46,7 @@ type SearchResult = {
 type NavConfig = Record<Lang, Map<string, NavEntry>>;
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
+const basePath = normalizeBasePath(import.meta.env.BASE_URL);
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
 const themeAssetCache = new Map<string, Promise<boolean>>();
 const siteMeta: Record<Lang, { description: string; locale: string }> = {
@@ -143,7 +144,8 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isThemeAssetSrc(src)) {
-      token.attrSet('data-theme-asset-base', normalizeThemeAssetSrc(src));
+      token.attrSet('src', getAssetUrl(src));
+      token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src)));
     }
   }
 
@@ -326,6 +328,13 @@ window.addEventListener('hashchange', () => {
   render();
 });
 
+window.addEventListener('popstate', () => {
+  const route = readRoute();
+  state.lang = route.lang;
+  state.activeId = route.id || getDocsByLang(route.lang)[0]?.id || docs[0].id;
+  render();
+});
+
 function createDoc(path: string, raw: string): Doc {
   const { meta, content } = parseFrontmatter(raw);
   const cleanPath = path.replace('../docs/', 'docs/');
@@ -486,7 +495,7 @@ function renderShell(): void {
       <button id="navOverlay" class="nav-overlay" type="button" aria-label="Close navigation"></button>
       <aside class="sidebar" aria-label="${copy.ariaNav}">
         <div class="brand">
-          <img class="brand-mark" src="./xrdocs-icon.png" data-theme-asset-base="./xrdocs-icon.png" alt="" aria-hidden="true" />
+          <img class="brand-mark" src="${getAssetUrl('./xrdocs-icon.png')}" data-theme-asset-base="${getAssetUrl('./xrdocs-icon.png')}" alt="" aria-hidden="true" />
           <div>
             <div class="brand-title">xrDocs</div>
             <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>
@@ -566,7 +575,7 @@ function render(): void {
   if (activeDoc.lang !== state.lang || activeDoc.id !== state.activeId) {
     state.lang = activeDoc.lang;
     state.activeId = activeDoc.id;
-    history.replaceState(null, '', `#/${activeDoc.lang}/${activeDoc.id}`);
+    history.replaceState(null, '', getDocUrl(activeDoc.lang, activeDoc.id));
   }
 
   const copy = labels[state.lang];
@@ -596,7 +605,7 @@ function render(): void {
 }
 
 function collectCurrentPage(doc: Doc): void {
-  const path = `${location.pathname}${location.search}#/${doc.lang}/${doc.id}`;
+  const path = getDocUrl(doc.lang, doc.id);
   const key = `${doc.lang}:${doc.id}:${doc.title}`;
 
   if (key === lastCollectedPage) {
@@ -707,7 +716,7 @@ function renderNav(): void {
           const active = doc.id === state.activeId ? ' aria-current="page"' : '';
 
           return `
-            <a class="doc-link" href="#/${doc.lang}/${doc.id}"${active}>
+            <a class="doc-link" href="${getDocUrl(doc.lang, doc.id)}"${active}>
               <span>${escapeHtml(doc.title)}</span>
               <small>${escapeHtml(doc.meta.summary || doc.path)}</small>
             </a>
@@ -729,7 +738,8 @@ function renderNav(): void {
   }
 
   nav.querySelectorAll<HTMLAnchorElement>('a.doc-link').forEach((link) => {
-    link.addEventListener('click', () => {
+    link.addEventListener('click', (event) => {
+      navigateToLink(event, link);
       setNavOpen(false);
     });
   });
@@ -752,7 +762,7 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
           const active = doc.id === state.activeId ? ' aria-current="page"' : '';
 
           return `
-            <a class="doc-link search-result" href="#/${doc.lang}/${doc.id}"${active}>
+            <a class="doc-link search-result" href="${getDocUrl(doc.lang, doc.id)}"${active}>
               <span>${highlight(doc.title, query, state.lang)}</span>
               <small>${escapeHtml(doc.meta.section)} · ${escapeHtml(doc.path)}</small>
               <p>${highlight(excerpt, query, state.lang)}</p>
@@ -764,7 +774,8 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
   `;
 
   nav.querySelectorAll<HTMLAnchorElement>('a.doc-link').forEach((link) => {
-    link.addEventListener('click', () => {
+    link.addEventListener('click', (event) => {
+      navigateToLink(event, link);
       setNavOpen(false);
     });
   });
@@ -893,7 +904,7 @@ function switchLanguage(nextLang: Lang): void {
 
   state.lang = nextLang;
   state.activeId = nextDoc.id;
-  history.pushState(null, '', `#/${nextLang}/${nextDoc.id}`);
+  history.pushState(null, '', getDocUrl(nextLang, nextDoc.id));
   collectEvent('language_switch', {
     from: previousLang,
     to: nextLang,
@@ -926,9 +937,42 @@ function getDocsByLang(lang: Lang): Doc[] {
 }
 
 function readRoute(): Route {
-  const value = decodeURIComponent(location.hash.replace(/^#\/?/, '')).replace(/\.md$/, '');
-  const [maybeLang, ...rest] = value.split('/').filter(Boolean);
   const savedLang = localStorage.getItem('xrDocsLang') === 'en' ? 'en' : 'ru';
+
+  if (location.hash.startsWith('#/')) {
+    const value = decodeURIComponent(location.hash.replace(/^#\/?/, '')).replace(/\.md$/, '');
+    const [maybeLang, ...rest] = value.split('/').filter(Boolean);
+
+    if (maybeLang === 'ru' || maybeLang === 'en') {
+      return {
+        lang: maybeLang,
+        id: rest.join('/'),
+      };
+    }
+
+    return {
+      lang: savedLang,
+      id: value,
+    };
+  }
+
+  const route = readRouteFromPath(location.pathname);
+
+  if (route) {
+    return route;
+  }
+
+  return {
+    lang: savedLang,
+    id: '',
+  };
+}
+
+function readRouteFromPath(pathname: string): Route | undefined {
+  const path = stripBasePath(decodeURIComponent(pathname))
+    .replace(/\/index\.html$/, '/')
+    .replace(/^\/+|\/+$/g, '');
+  const [maybeLang, ...rest] = path.split('/').filter(Boolean);
 
   if (maybeLang === 'ru' || maybeLang === 'en') {
     return {
@@ -937,10 +981,7 @@ function readRoute(): Route {
     };
   }
 
-  return {
-    lang: savedLang,
-    id: value,
-  };
+  return undefined;
 }
 
 function readTheme(): Theme {
@@ -948,14 +989,70 @@ function readTheme(): Theme {
 }
 
 function rewriteDocLinks(html: string, currentLang: Lang): string {
-  return html.replace(/href="([^"]+)\.md"/g, (_match, link: string) => {
-    const normalized = link
+  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (_match, link: string) => {
+    const [path, hash = ''] = link.split('#');
+    const normalized = path
       .replace(/^\.\//, '')
       .replace(/^docs\//, '')
-      .replace(/^(ru|en)\//, '');
+      .replace(/^(ru|en)\//, '')
+      .replace(/\.md$/, '');
 
-    return `href="#/${currentLang}/${normalized}"`;
+    return `href="${getDocUrl(currentLang, normalized)}${hash ? `#${hash}` : ''}"`;
   });
+}
+
+function getDocUrl(lang: Lang, id: string): string {
+  return `${basePath}${lang}/${id.split('/').map(encodeURIComponent).join('/')}/`;
+}
+
+function getAssetUrl(src: string): string {
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src)) {
+    return src;
+  }
+
+  return `${basePath}${src.replace(/^\.?\//, '')}`;
+}
+
+function navigateToLink(event: MouseEvent, link: HTMLAnchorElement): void {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    return;
+  }
+
+  const url = new URL(link.href);
+
+  if (url.origin !== location.origin || !url.pathname.startsWith(basePath)) {
+    return;
+  }
+
+  const route = readRouteFromPath(url.pathname);
+
+  if (!route) {
+    return;
+  }
+
+  event.preventDefault();
+  state.lang = route.lang;
+  state.activeId = route.id || getDocsByLang(route.lang)[0]?.id || docs[0].id;
+  history.pushState(null, '', `${url.pathname}${url.hash}`);
+  render();
+}
+
+function normalizeBasePath(value: string): string {
+  const normalized = value.replace(/^\/+|\/+$/g, '');
+
+  if (!normalized || value === './') {
+    return '/';
+  }
+
+  return `/${normalized}/`;
+}
+
+function stripBasePath(pathname: string): string {
+  if (basePath === '/') {
+    return pathname;
+  }
+
+  return pathname.startsWith(basePath) ? `/${pathname.slice(basePath.length)}` : pathname;
 }
 
 function updateDocumentMeta(doc: Doc): void {
