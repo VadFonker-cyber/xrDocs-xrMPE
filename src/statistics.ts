@@ -7,6 +7,7 @@ type PageView = {
 };
 
 type UmamiTracker = {
+  identify(id: string): void;
   track(): void;
   track(payload: Record<string, unknown> | ((props: Record<string, unknown>) => Record<string, unknown>)): void;
   track(eventName: string, data?: StatisticParams): void;
@@ -24,9 +25,11 @@ const enabledInDev = import.meta.env.VITE_ENABLE_STATISTICS_IN_DEV === 'true';
 const shouldCollect = Boolean(websiteId && scriptUrl && (import.meta.env.PROD || enabledInDev));
 const loadTimeoutMs = 8000;
 const maxQueuedEvents = 20;
+const visitorStorageKey = 'xrDocsVisitorId';
 
 let status: 'disabled' | 'loading' | 'ready' | 'failed' = shouldCollect ? 'loading' : 'disabled';
 let initialized = false;
+let identified = false;
 let loadTimeout: number | undefined;
 let queuedEvents: Array<() => void> = [];
 
@@ -43,9 +46,10 @@ export function collectPageView(page: PageView): void {
   queueOrCollect(() => {
     window.umami?.track((props) => ({
       ...props,
-      data: {
+      id: readOrCreateVisitorId(),
+      data: cleanParams({
         lang: page.lang,
-      },
+      }),
       title: page.title,
       url: new URL(page.path, window.location.origin).toString(),
     }));
@@ -54,7 +58,12 @@ export function collectPageView(page: PageView): void {
 
 export function collectEvent(event: string, params: StatisticParams = {}): void {
   queueOrCollect(() => {
-    window.umami?.track(formatEventName(event), cleanParams(params));
+    window.umami?.track((props) => ({
+      ...props,
+      data: cleanParams(params),
+      id: readOrCreateVisitorId(),
+      name: formatEventName(event),
+    }));
   });
 }
 
@@ -80,6 +89,7 @@ function loadUmamiScript(): void {
 
   if (existingScript) {
     status = 'ready';
+    identifyVisitor();
     flushQueuedEvents();
     return;
   }
@@ -92,6 +102,7 @@ function loadUmamiScript(): void {
   script.src = scriptUrl;
   script.onload = () => {
     status = 'ready';
+    identifyVisitor();
     clearLoadTimeout();
     flushQueuedEvents();
   };
@@ -114,6 +125,52 @@ function flushQueuedEvents(): void {
   for (const event of events) {
     queueOrCollect(event);
   }
+}
+
+function identifyVisitor(): void {
+  if (identified) {
+    return;
+  }
+
+  const visitorId = readOrCreateVisitorId();
+
+  if (!visitorId) {
+    return;
+  }
+
+  try {
+    window.umami?.identify(visitorId);
+    identified = true;
+  } catch {
+    identified = false;
+  }
+}
+
+function readOrCreateVisitorId(): string | undefined {
+  try {
+    const existingId = localStorage.getItem(visitorStorageKey);
+
+    if (existingId) {
+      return existingId;
+    }
+
+    const visitorId = createVisitorId();
+    localStorage.setItem(visitorStorageKey, visitorId);
+    return visitorId;
+  } catch {
+    return undefined;
+  }
+}
+
+function createVisitorId(): string {
+  if (crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  const values = new Uint32Array(4);
+  crypto.getRandomValues(values);
+
+  return Array.from(values, (value) => value.toString(16).padStart(8, '0')).join('');
 }
 
 function failStatistics(): void {
