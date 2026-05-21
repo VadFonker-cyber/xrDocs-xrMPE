@@ -11,6 +11,7 @@ import './styles.css';
 
 type Lang = 'ru' | 'en';
 type Theme = 'dark' | 'light';
+type ThemePreference = Theme | 'auto';
 
 type DocMeta = {
   section: string;
@@ -315,8 +316,9 @@ const state = {
   navOpen: false,
   theme: readTheme(),
 };
+const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: light)');
 
-document.documentElement.dataset.theme = state.theme;
+document.documentElement.dataset.theme = getResolvedTheme();
 initStatistics();
 renderShell();
 render();
@@ -333,6 +335,12 @@ window.addEventListener('popstate', () => {
   state.lang = route.lang;
   state.activeId = route.id || getDocsByLang(route.lang)[0]?.id || docs[0].id;
   render();
+});
+
+colorSchemeQuery.addEventListener('change', () => {
+  if (state.theme === 'auto') {
+    render();
+  }
 });
 
 function createDoc(path: string, raw: string): Doc {
@@ -554,7 +562,7 @@ function renderShell(): void {
   });
 
   document.querySelector<HTMLButtonElement>('#themeToggle')?.addEventListener('click', () => {
-    switchTheme(state.theme === 'dark' ? 'light' : 'dark');
+    switchTheme(getNextThemePreference(state.theme));
   });
 
   window.addEventListener('keydown', (event) => {
@@ -581,7 +589,7 @@ function render(): void {
   const copy = labels[state.lang];
   localStorage.setItem('xrDocsLang', state.lang);
   document.documentElement.lang = state.lang;
-  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.theme = getResolvedTheme();
   document.title = `${activeDoc.title} | xrDocs`;
   updateDocumentMeta(activeDoc);
   setNavOpen(state.navOpen);
@@ -667,11 +675,19 @@ function renderTopbarControls(): void {
   const themeToggle = document.querySelector<HTMLButtonElement>('#themeToggle');
   if (themeToggle) {
     themeToggle.innerHTML = getThemeIcon(state.theme);
-    themeToggle.title = state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+    themeToggle.title = getThemeToggleTitle(state.theme);
   }
 }
 
-function getThemeIcon(theme: Theme): string {
+function getThemeIcon(theme: ThemePreference): string {
+  if (theme === 'auto') {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-4v3h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-3H7a3 3 0 0 1-3-3V5Zm3-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H7Z" />
+      </svg>
+    `;
+  }
+
   if (theme === 'dark') {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -912,16 +928,17 @@ function switchLanguage(nextLang: Lang): void {
   render();
 }
 
-function switchTheme(nextTheme: Theme): void {
+function switchTheme(nextTheme: ThemePreference): void {
   if (nextTheme === state.theme) {
     return;
   }
 
   state.theme = nextTheme;
   localStorage.setItem('xrDocsTheme', nextTheme);
-  document.documentElement.dataset.theme = nextTheme;
+  document.documentElement.dataset.theme = getResolvedTheme();
   collectEvent('theme_switch', {
     theme: nextTheme,
+    resolved_theme: getResolvedTheme(),
   });
   render();
 }
@@ -937,7 +954,7 @@ function getDocsByLang(lang: Lang): Doc[] {
 }
 
 function readRoute(): Route {
-  const savedLang = localStorage.getItem('xrDocsLang') === 'en' ? 'en' : 'ru';
+  const savedLang = readSavedLang() || detectBrowserLang();
 
   if (location.hash.startsWith('#/')) {
     const value = decodeURIComponent(location.hash.replace(/^#\/?/, '')).replace(/\.md$/, '');
@@ -984,8 +1001,48 @@ function readRouteFromPath(pathname: string): Route | undefined {
   return undefined;
 }
 
-function readTheme(): Theme {
-  return localStorage.getItem('xrDocsTheme') === 'light' ? 'light' : 'dark';
+function readTheme(): ThemePreference {
+  const savedTheme = localStorage.getItem('xrDocsTheme');
+
+  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'auto') {
+    return savedTheme;
+  }
+
+  return 'auto';
+}
+
+function readSavedLang(): Lang | undefined {
+  const savedLang = localStorage.getItem('xrDocsLang');
+  return savedLang === 'ru' || savedLang === 'en' ? savedLang : undefined;
+}
+
+function detectBrowserLang(): Lang {
+  const languages = navigator.languages?.length ? navigator.languages : [navigator.language];
+  return languages.some((lang) => lang.toLocaleLowerCase().startsWith('ru')) ? 'ru' : 'en';
+}
+
+function getResolvedTheme(): Theme {
+  if (state.theme !== 'auto') {
+    return state.theme;
+  }
+
+  return colorSchemeQuery.matches ? 'light' : 'dark';
+}
+
+function getNextThemePreference(theme: ThemePreference): ThemePreference {
+  if (theme === 'auto') {
+    return 'light';
+  }
+
+  return theme === 'light' ? 'dark' : 'auto';
+}
+
+function getThemeToggleTitle(theme: ThemePreference): string {
+  if (theme === 'auto') {
+    return `Follow system theme (${getResolvedTheme()})`;
+  }
+
+  return theme === 'dark' ? 'Switch to automatic theme' : 'Switch to dark theme';
 }
 
 function rewriteDocLinks(html: string, currentLang: Lang): string {
@@ -1082,6 +1139,8 @@ function setMetaContent(attribute: 'name' | 'property', value: string, content: 
 }
 
 function updateThemeAssets(root: ParentNode): void {
+  const theme = getResolvedTheme();
+
   root.querySelectorAll<HTMLImageElement>('img[data-theme-asset-base]').forEach((image) => {
     const baseSrc = image.dataset.themeAssetBase;
 
@@ -1089,10 +1148,10 @@ function updateThemeAssets(root: ParentNode): void {
       return;
     }
 
-    const requestKey = `${state.theme}:${baseSrc}`;
+    const requestKey = `${theme}:${baseSrc}`;
     image.dataset.themeAssetRequest = requestKey;
 
-    resolveThemeAssetSrc(baseSrc, state.theme).then((nextSrc) => {
+    resolveThemeAssetSrc(baseSrc, theme).then((nextSrc) => {
       if (image.dataset.themeAssetRequest !== requestKey) {
         return;
       }
