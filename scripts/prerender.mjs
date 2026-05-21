@@ -37,7 +37,7 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
 
 const siteMeta = {
   ru: {
-    description: 'Dokumentatsiya po moddingu S.T.A.L.K.E.R. dlya xrMPE.',
+    description: 'Документация по моддингу S.T.A.L.K.E.R. для xrMPE.',
     locale: 'ru_RU',
   },
   en: {
@@ -76,6 +76,7 @@ function readDocs() {
     .filter((file) => path.basename(file).toLowerCase() !== 'init.md')
     .map((file) => {
       const raw = fs.readFileSync(file, 'utf8');
+      const updatedAt = fs.statSync(file).mtime;
       const relative = slash(path.relative(docsDir, file));
       const [lang, ...parts] = relative.split('/');
       const id = parts.join('/').replace(/\.md$/i, '');
@@ -88,6 +89,7 @@ function readDocs() {
         path: `docs/${relative}`,
         title: extractTitle(content) || 'Untitled',
         content,
+        updatedAt,
         meta: {
           section: navEntry?.section || meta.section || 'Documents',
           order: navEntry?.order ?? Number(meta.order || 999),
@@ -233,6 +235,8 @@ function writePage(doc, canonicalPath, outputPath) {
     html = upsertLink(html, 'alternate', toAbsoluteUrl(getDocPath(alternate.lang, alternate.id)), alternate.lang);
   }
 
+  html = upsertLink(html, 'alternate', getXDefaultUrl(doc, canonicalPath), 'x-default');
+
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, html);
 }
@@ -254,8 +258,12 @@ function renderStaticBody(activeDoc) {
 }
 
 function writeSitemap(pages) {
-  const urls = ['/', ...pages.map((page) => page.canonicalPath)]
-    .map((urlPath) => `  <url><loc>${escapeXml(toAbsoluteUrl(urlPath))}</loc></url>`)
+  const defaultUpdatedAt = getLatestUpdatedAt(docs);
+  const urls = [{ canonicalPath: '/', updatedAt: defaultUpdatedAt }, ...pages]
+    .map(
+      (page) =>
+        `  <url><loc>${escapeXml(toAbsoluteUrl(page.canonicalPath))}</loc><lastmod>${formatSitemapDate(getPageUpdatedAt(page))}</lastmod></url>`,
+    )
     .join('\n');
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 
@@ -273,6 +281,29 @@ function getAlternates(doc) {
   return ['ru', 'en']
     .map((lang) => docs.find((candidate) => candidate.lang === lang && candidate.id === doc.id) || firstByLang.get(lang))
     .filter(Boolean);
+}
+
+function getXDefaultUrl(doc, canonicalPath) {
+  if (canonicalPath === '/') {
+    return siteUrl;
+  }
+
+  const fallbackDoc =
+    docs.find((candidate) => candidate.lang === 'ru' && candidate.id === doc.id) || firstByLang.get('ru') || doc;
+
+  return toAbsoluteUrl(getDocPath(fallbackDoc.lang, fallbackDoc.id));
+}
+
+function getLatestUpdatedAt(items) {
+  return items.reduce((latest, item) => (item.updatedAt > latest ? item.updatedAt : latest), new Date(0));
+}
+
+function getPageUpdatedAt(page) {
+  return page.updatedAt || page.doc?.updatedAt || new Date(0);
+}
+
+function formatSitemapDate(value) {
+  return value.toISOString().slice(0, 10);
 }
 
 function rewriteDocLinks(html, currentLang) {
