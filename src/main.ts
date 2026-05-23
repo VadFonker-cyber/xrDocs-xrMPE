@@ -47,6 +47,19 @@ type SearchResult = {
   excerpt: string;
 };
 
+type TocItem = {
+  id: string;
+  title: string;
+  level: number;
+  children: TocItem[];
+  parentId?: string;
+};
+
+type RenderedDoc = {
+  html: string;
+  toc: TocItem[];
+};
+
 type NavConfig = Record<Lang, Map<string, NavEntry>>;
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
@@ -85,6 +98,13 @@ const labels: Record<Lang, Record<string, string>> = {
     defaultSection: 'Материалы',
     fallbackSummary: 'Добавьте Markdown-файлы в docs/ru или docs/en.',
     fallbackBody: 'Создайте файлы в `docs/ru` и `docs/en`, и они появятся в навигации после сборки.',
+    toc: 'Содержание',
+    tocToggle: 'Структура',
+    tocSearch: 'Поиск по статье',
+    tocCollapseAll: 'Свернуть все',
+    tocExpandAll: 'Развернуть все',
+    tocEmpty: 'Не найдено ни одного заголовка.',
+    tocNoResults: 'Ничего не найдено в этой статье.',
   },
   en: {
     ariaNav: 'Documentation navigation',
@@ -100,6 +120,13 @@ const labels: Record<Lang, Record<string, string>> = {
     defaultSection: 'Materials',
     fallbackSummary: 'Add Markdown files to docs/ru or docs/en.',
     fallbackBody: 'Create files in `docs/ru` and `docs/en`, and they will appear in navigation after build.',
+    toc: 'Contents',
+    tocToggle: 'Structure',
+    tocSearch: 'Search this article',
+    tocCollapseAll: 'Collapse all',
+    tocExpandAll: 'Expand all',
+    tocEmpty: 'No headings found.',
+    tocNoResults: 'No headings found in this article.',
   },
 };
 
@@ -276,6 +303,11 @@ const navConfig = createNavConfig(markdownFiles);
 let lastCollectedPage = '';
 let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
+let headingObserver: IntersectionObserver | undefined;
+let currentTocDocKey = '';
+let currentTocItems: TocItem[] = [];
+const minTocWidth = 280;
+const maxTocWidth = 560;
 
 let docs = Object.entries(markdownFiles)
   .filter(([path]) => !isInitFile(path))
@@ -328,6 +360,12 @@ const state = {
   lang: initialRoute.lang,
   activeId: initialRoute.id || getDocsByLang(initialRoute.lang)[0]?.id || docs[0].id,
   navOpen: false,
+  tocOpen: readTocOpen(),
+  tocSearchOpen: false,
+  tocWidth: readTocWidth(),
+  tocQuery: '',
+  tocCollapsedIds: new Set<string>(),
+  activeHeadingId: '',
   theme: readTheme(),
 };
 const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: light)');
@@ -513,8 +551,9 @@ function renderShell(): void {
   const copy = labels[state.lang];
 
   appRoot.innerHTML = `
-    <div class="layout" data-nav-open="false">
+    <div class="layout" data-nav-open="false" data-toc-open="${state.tocOpen}" style="--toc-width: ${state.tocWidth}px">
       <button id="navOverlay" class="nav-overlay" type="button" aria-label="Close navigation"></button>
+      <button id="tocOverlay" class="toc-overlay" type="button" aria-label="Close contents"></button>
       <aside class="sidebar" aria-label="${copy.ariaNav}">
         <div class="brand">
           <picture>
@@ -546,6 +585,9 @@ function renderShell(): void {
             </button>
             <button id="languageToggle" class="control-button" type="button" aria-label="Switch language"></button>
             <button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme" title="Switch theme"></button>
+            <button id="tocToggle" class="icon-button toc-toggle" type="button" aria-label="${getLabel(state.lang, 'tocToggle')}" title="${getLabel(state.lang, 'tocToggle')}" aria-expanded="${state.tocOpen}">
+              <span class="toc-icon" aria-hidden="true"></span>
+            </button>
             <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.38-3.37-1.38-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.93.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.96c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.16 10.16 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
@@ -558,6 +600,24 @@ function renderShell(): void {
           <article id="docArticle" class="doc-article"></article>
         </section>
       </main>
+
+      <aside id="tocPanel" class="toc-panel" aria-label="${getLabel(state.lang, 'toc')}">
+        <div id="tocResizeHandle" class="toc-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize contents panel"></div>
+        <div class="toc-header">
+          <h2>${getLabel(state.lang, 'toc')}</h2>
+          <div class="toc-actions">
+            <button id="tocSearchToggle" class="icon-button" type="button" aria-label="${getLabel(state.lang, 'tocSearch')}" title="${getLabel(state.lang, 'tocSearch')}" aria-pressed="false">
+              <span class="search-icon" aria-hidden="true"></span>
+            </button>
+            <button id="tocCollapseToggle" class="icon-button toc-collapse-toggle" type="button"></button>
+          </div>
+        </div>
+        <label class="search toc-search">
+          <span class="search-icon" aria-hidden="true"></span>
+          <input id="tocSearchInput" type="search" placeholder="${getLabel(state.lang, 'tocSearch')}" autocomplete="off" />
+        </label>
+        <nav id="tocNav" class="toc-nav"></nav>
+      </aside>
     </div>
   `;
 
@@ -574,6 +634,35 @@ function renderShell(): void {
     setNavOpen(false);
   });
 
+  document.querySelector<HTMLButtonElement>('#tocOverlay')?.addEventListener('click', () => {
+    setTocOpen(false);
+  });
+
+  document.querySelector<HTMLButtonElement>('#tocToggle')?.addEventListener('click', () => {
+    setTocOpen(!state.tocOpen);
+  });
+
+  document.querySelector<HTMLElement>('#tocResizeHandle')?.addEventListener('pointerdown', startTocResize);
+
+  document.querySelector<HTMLButtonElement>('#tocSearchToggle')?.addEventListener('click', () => {
+    state.tocSearchOpen = !state.tocSearchOpen;
+
+    if (!state.tocSearchOpen) {
+      state.tocQuery = '';
+    }
+
+    renderToc();
+
+    if (state.tocSearchOpen) {
+      document.querySelector<HTMLInputElement>('#tocSearchInput')?.focus();
+    }
+  });
+
+  document.querySelector<HTMLInputElement>('#tocSearchInput')?.addEventListener('input', (event) => {
+    state.tocQuery = (event.currentTarget as HTMLInputElement).value;
+    renderToc();
+  });
+
   document.querySelector<HTMLButtonElement>('#languageToggle')?.addEventListener('click', () => {
     switchLanguage(state.lang === 'ru' ? 'en' : 'ru');
   });
@@ -585,6 +674,7 @@ function renderShell(): void {
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       setNavOpen(false);
+      setTocOpen(false);
     }
   });
 }
@@ -610,6 +700,15 @@ function render(): void {
   document.title = `${activeDoc.title} | xrDocs`;
   updateDocumentMeta(activeDoc);
   setNavOpen(state.navOpen);
+  setTocOpen(state.tocOpen, false);
+
+  const tocDocKey = `${activeDoc.lang}:${activeDoc.id}`;
+  if (tocDocKey !== currentTocDocKey) {
+    currentTocDocKey = tocDocKey;
+    state.tocQuery = '';
+    state.tocCollapsedIds = new Set<string>();
+    state.activeHeadingId = '';
+  }
 
   const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
   if (searchInput) {
@@ -617,16 +716,336 @@ function render(): void {
     searchInput.value = state.search;
   }
 
-  renderTopbarControls();
+  renderTopbarControls(activeDoc);
 
   const article = document.querySelector<HTMLElement>('#docArticle');
   if (article) {
-    article.innerHTML = rewriteDocLinks(md.render(activeDoc.content), state.lang);
+    const renderedDoc = renderDocContent(activeDoc.content, state.lang);
+    currentTocItems = renderedDoc.toc;
+    article.innerHTML = renderedDoc.html;
+    observeArticleHeadings(article);
   }
 
   renderNav();
+  renderToc();
   updateThemeAssets(appRoot);
   collectCurrentPage(activeDoc);
+}
+
+function renderDocContent(content: string, lang: Lang): RenderedDoc {
+  const tokens = md.parse(content, {});
+  const toc = createToc(tokens, lang);
+
+  return {
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, {}), lang),
+    toc,
+  };
+}
+
+function createToc(tokens: Token[], lang: Lang): TocItem[] {
+  const roots: TocItem[] = [];
+  const stack: TocItem[] = [];
+  const slugCounts = new Map<string, number>();
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'heading_open') {
+      continue;
+    }
+
+    const level = Number(token.tag.slice(1));
+    const inline = tokens[index + 1];
+    const title = inline?.type === 'inline' ? inline.content.trim() : '';
+    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
+    const count = (slugCounts.get(baseSlug) || 0) + 1;
+    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
+    slugCounts.set(baseSlug, count);
+    token.attrSet('id', id);
+
+    const item: TocItem = {
+      id,
+      title: title || id,
+      level,
+      children: [],
+    };
+
+    while (stack.length && stack[stack.length - 1].level >= level) {
+      stack.pop();
+    }
+
+    const parent = stack[stack.length - 1];
+    if (parent) {
+      item.parentId = parent.id;
+      parent.children.push(item);
+    } else {
+      roots.push(item);
+    }
+
+    stack.push(item);
+  }
+
+  return roots;
+}
+
+function slugifyHeading(value: string, lang: Lang): string {
+  return value
+    .toLocaleLowerCase(lang)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+
+function renderToc(): void {
+  const panel = document.querySelector<HTMLElement>('#tocPanel');
+  const nav = document.querySelector<HTMLElement>('#tocNav');
+  const input = document.querySelector<HTMLInputElement>('#tocSearchInput');
+  const collapseToggle = document.querySelector<HTMLButtonElement>('#tocCollapseToggle');
+  const searchToggle = document.querySelector<HTMLButtonElement>('#tocSearchToggle');
+  const tocToggle = document.querySelector<HTMLButtonElement>('#tocToggle');
+
+  if (!panel || !nav || !collapseToggle) {
+    return;
+  }
+
+  panel.hidden = false;
+  panel.dataset.searchOpen = String(state.tocSearchOpen);
+
+  if (tocToggle) {
+    tocToggle.hidden = false;
+    tocToggle.setAttribute('aria-expanded', String(state.tocOpen));
+  }
+
+  if (input) {
+    input.placeholder = getLabel(state.lang, 'tocSearch');
+    input.value = state.tocQuery;
+  }
+
+  if (searchToggle) {
+    searchToggle.setAttribute('aria-label', getLabel(state.lang, 'tocSearch'));
+    searchToggle.setAttribute('title', getLabel(state.lang, 'tocSearch'));
+    searchToggle.setAttribute('aria-pressed', String(state.tocSearchOpen));
+  }
+
+  if (!currentTocItems.length) {
+    nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(state.lang, 'tocEmpty'))}</p>`;
+    collapseToggle.hidden = true;
+    return;
+  }
+
+  const query = state.tocQuery.trim();
+  const visibleItems = query ? filterTocItems(currentTocItems, query, state.lang) : currentTocItems;
+  const collapsibleIds = getCollapsibleTocIds(currentTocItems);
+  const allCollapsed = collapsibleIds.length > 0 && collapsibleIds.every((id) => state.tocCollapsedIds.has(id));
+
+  collapseToggle.hidden = false;
+  collapseToggle.innerHTML = getCollapseIcon(allCollapsed);
+  collapseToggle.setAttribute('aria-label', getLabel(state.lang, allCollapsed ? 'tocExpandAll' : 'tocCollapseAll'));
+  collapseToggle.setAttribute('title', getLabel(state.lang, allCollapsed ? 'tocExpandAll' : 'tocCollapseAll'));
+  collapseToggle.onclick = () => {
+    state.tocCollapsedIds = allCollapsed ? new Set<string>() : new Set(collapsibleIds);
+    renderToc();
+  };
+
+  if (!visibleItems.length) {
+    nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(state.lang, 'tocNoResults'))}</p>`;
+    return;
+  }
+
+  nav.innerHTML = renderTocList(visibleItems, Boolean(query));
+
+  nav.querySelectorAll<HTMLAnchorElement>('a.toc-link').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const id = link.dataset.headingId;
+      const heading = id ? document.getElementById(id) : null;
+
+      if (!id || !heading) {
+        return;
+      }
+
+      setActiveHeading(id);
+      history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(id)}`);
+      heading.scrollIntoView({ block: 'start', behavior: 'smooth' });
+
+      if (window.matchMedia('(max-width: 1100px)').matches) {
+        setTocOpen(false);
+      }
+    });
+  });
+
+  nav.querySelectorAll<HTMLButtonElement>('button.toc-item-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.headingId;
+
+      if (!id) {
+        return;
+      }
+
+      if (state.tocCollapsedIds.has(id)) {
+        state.tocCollapsedIds.delete(id);
+      } else {
+        state.tocCollapsedIds.add(id);
+      }
+
+      renderToc();
+    });
+  });
+}
+
+function renderTocList(items: TocItem[], forceOpen: boolean): string {
+  return `
+    <ol class="toc-list">
+      ${items.map((item) => renderTocItem(item, forceOpen)).join('')}
+    </ol>
+  `;
+}
+
+function renderTocItem(item: TocItem, forceOpen: boolean): string {
+  const hasChildren = item.children.length > 0;
+  const collapsed = !forceOpen && state.tocCollapsedIds.has(item.id);
+  const active = item.id === state.activeHeadingId ? ' aria-current="true"' : '';
+  const toggle = hasChildren
+    ? `<button class="toc-item-toggle" type="button" data-heading-id="${escapeHtml(item.id)}" aria-label="Toggle section" aria-expanded="${!collapsed}"></button>`
+    : '<span class="toc-item-spacer" aria-hidden="true"></span>';
+  const children = hasChildren && !collapsed ? renderTocList(item.children, forceOpen) : '';
+
+  return `
+    <li class="toc-item" data-level="${item.level}">
+      <div class="toc-item-row">
+        ${toggle}
+        <a class="toc-link" href="#${encodeURIComponent(item.id)}" data-heading-id="${escapeHtml(item.id)}"${active}>
+          ${escapeHtml(item.title)}
+        </a>
+      </div>
+      ${children}
+    </li>
+  `;
+}
+
+function filterTocItems(items: TocItem[], query: string, lang: Lang): TocItem[] {
+  const terms = normalizeSearch(query, lang).split(/\s+/).filter(Boolean);
+
+  if (!terms.length) {
+    return items;
+  }
+
+  return items
+    .map((item) => filterTocItem(item, terms, lang))
+    .filter((item): item is TocItem => Boolean(item));
+}
+
+function filterTocItem(item: TocItem, terms: string[], lang: Lang): TocItem | undefined {
+  const title = normalizeSearch(item.title, lang);
+  const selfMatches = terms.every((term) => title.includes(term));
+  const children = item.children
+    .map((child) => filterTocItem(child, terms, lang))
+    .filter((child): child is TocItem => Boolean(child));
+
+  if (!selfMatches && !children.length) {
+    return undefined;
+  }
+
+  return {
+    ...item,
+    children: selfMatches ? item.children : children,
+  };
+}
+
+function getCollapsibleTocIds(items: TocItem[]): string[] {
+  return items.flatMap((item) => [
+    ...(item.children.length ? [item.id] : []),
+    ...getCollapsibleTocIds(item.children),
+  ]);
+}
+
+function observeArticleHeadings(article: HTMLElement): void {
+  headingObserver?.disconnect();
+  const headings = Array.from(article.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]'));
+
+  if (!headings.length) {
+    return;
+  }
+
+  headingObserver = new IntersectionObserver(
+    (entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+
+      if (visible?.target instanceof HTMLElement) {
+        setActiveHeading(visible.target.id);
+      }
+    },
+    {
+      rootMargin: '-18% 0px -70% 0px',
+      threshold: [0, 1],
+    },
+  );
+
+  headings.forEach((heading) => headingObserver?.observe(heading));
+
+  const hashId = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (hashId && headings.some((heading) => heading.id === hashId)) {
+    setActiveHeading(hashId);
+    window.setTimeout(() => document.getElementById(hashId)?.scrollIntoView({ block: 'start' }), 0);
+  } else {
+    setActiveHeading(headings[0].id);
+  }
+}
+
+function setActiveHeading(id: string): void {
+  if (!id || state.activeHeadingId === id) {
+    return;
+  }
+
+  state.activeHeadingId = id;
+  if (expandTocAncestors(id)) {
+    renderToc();
+  } else {
+    updateActiveTocLink();
+  }
+}
+
+function expandTocAncestors(id: string): boolean {
+  const itemById = new Map<string, TocItem>();
+  flattenToc(currentTocItems).forEach((item) => itemById.set(item.id, item));
+  let current = itemById.get(id);
+  let changed = false;
+
+  while (current?.parentId) {
+    if (state.tocCollapsedIds.delete(current.parentId)) {
+      changed = true;
+    }
+
+    current = itemById.get(current.parentId);
+  }
+
+  return changed;
+}
+
+function flattenToc(items: TocItem[]): TocItem[] {
+  return items.flatMap((item) => [item, ...flattenToc(item.children)]);
+}
+
+function updateActiveTocLink(): void {
+  const nav = document.querySelector<HTMLElement>('#tocNav');
+
+  if (!nav) {
+    return;
+  }
+
+  nav.querySelectorAll<HTMLAnchorElement>('a.toc-link[aria-current="true"]').forEach((link) => {
+    link.removeAttribute('aria-current');
+  });
+
+  nav.querySelectorAll<HTMLAnchorElement>('a.toc-link').forEach((link) => {
+    if (link.dataset.headingId === state.activeHeadingId) {
+      link.setAttribute('aria-current', 'true');
+    }
+  });
 }
 
 function collectCurrentPage(doc: Doc): void {
@@ -673,7 +1092,7 @@ function scheduleSearchStatistics(query: string, resultCount: number): void {
   }, 600);
 }
 
-function renderTopbarControls(): void {
+function renderTopbarControls(activeDoc: Doc): void {
   const languageToggle = document.querySelector<HTMLButtonElement>('#languageToggle');
   if (languageToggle) {
     languageToggle.textContent = state.lang.toUpperCase();
@@ -693,6 +1112,14 @@ function renderTopbarControls(): void {
   if (themeToggle) {
     themeToggle.innerHTML = getThemeIcon(state.theme);
     themeToggle.title = getThemeToggleTitle(state.theme);
+  }
+
+  const tocToggle = document.querySelector<HTMLButtonElement>('#tocToggle');
+  if (tocToggle) {
+    const title = getTocTitle(activeDoc);
+    tocToggle.setAttribute('aria-label', title);
+    tocToggle.setAttribute('title', title);
+    tocToggle.setAttribute('aria-expanded', String(state.tocOpen));
   }
 }
 
@@ -718,6 +1145,22 @@ function getThemeIcon(theme: ThemePreference): string {
       <path d="M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm0-3a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 17a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM3 11h1a1 1 0 1 1 0 2H3a1 1 0 1 1 0-2Zm17 0h1a1 1 0 1 1 0 2h-1a1 1 0 1 1 0-2ZM5.64 4.22l.7.7A1 1 0 1 1 4.93 6.34l-.7-.7a1 1 0 0 1 1.41-1.42Zm13.43 13.43.7.7a1 1 0 0 1-1.41 1.42l-.7-.7a1 1 0 0 1 1.41-1.42ZM19.78 5.64l-.7.7a1 1 0 0 1-1.42-1.41l.7-.7a1 1 0 0 1 1.42 1.41ZM6.34 19.07l-.7.7a1 1 0 0 1-1.42-1.41l.7-.7a1 1 0 0 1 1.42 1.41Z" />
     </svg>
   `;
+}
+
+function getCollapseIcon(expand: boolean): string {
+  return expand
+    ? `
+      <svg class="toc-fold-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="m7 10 5-5 5 5" />
+        <path d="m7 14 5 5 5-5" />
+      </svg>
+    `
+    : `
+      <svg class="toc-fold-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="m7 5 5 5 5-5" />
+        <path d="m7 19 5-5 5 5" />
+      </svg>
+    `;
 }
 
 function renderNav(): void {
@@ -966,6 +1409,46 @@ function setNavOpen(open: boolean): void {
   document.querySelector<HTMLButtonElement>('#navToggle')?.setAttribute('aria-expanded', String(open));
 }
 
+function setTocOpen(open: boolean, persist = true): void {
+  state.tocOpen = open;
+  document.querySelector<HTMLElement>('.layout')?.setAttribute('data-toc-open', String(open));
+  document.querySelector<HTMLButtonElement>('#tocToggle')?.setAttribute('aria-expanded', String(open));
+
+  if (persist) {
+    localStorage.setItem('xrDocsTocOpen', String(open));
+  }
+}
+
+function startTocResize(event: PointerEvent): void {
+  if (event.button !== 0 || window.matchMedia('(max-width: 1100px)').matches) {
+    return;
+  }
+
+  event.preventDefault();
+  document.documentElement.dataset.tocResizing = 'true';
+
+  const resize = (moveEvent: PointerEvent) => {
+    setTocWidth(window.innerWidth - moveEvent.clientX);
+  };
+
+  const stop = () => {
+    document.documentElement.removeAttribute('data-toc-resizing');
+    window.removeEventListener('pointermove', resize);
+    window.removeEventListener('pointerup', stop);
+    window.removeEventListener('pointercancel', stop);
+  };
+
+  window.addEventListener('pointermove', resize);
+  window.addEventListener('pointerup', stop);
+  window.addEventListener('pointercancel', stop);
+}
+
+function setTocWidth(width: number): void {
+  state.tocWidth = clamp(Math.round(width), minTocWidth, maxTocWidth);
+  document.querySelector<HTMLElement>('.layout')?.style.setProperty('--toc-width', `${state.tocWidth}px`);
+  localStorage.setItem('xrDocsTocWidth', String(state.tocWidth));
+}
+
 function getDocsByLang(lang: Lang): Doc[] {
   return docs.filter((doc) => doc.lang === lang);
 }
@@ -1028,6 +1511,14 @@ function readTheme(): ThemePreference {
   return 'auto';
 }
 
+function readTocOpen(): boolean {
+  return localStorage.getItem('xrDocsTocOpen') !== 'false';
+}
+
+function readTocWidth(): number {
+  return clamp(Number(localStorage.getItem('xrDocsTocWidth')) || 360, minTocWidth, maxTocWidth);
+}
+
 function readSavedLang(): Lang | undefined {
   const savedLang = localStorage.getItem('xrDocsLang');
   return savedLang === 'ru' || savedLang === 'en' ? savedLang : undefined;
@@ -1060,6 +1551,11 @@ function getThemeToggleTitle(theme: ThemePreference): string {
   }
 
   return theme === 'dark' ? 'Switch to automatic theme' : 'Switch to dark theme';
+}
+
+function getTocTitle(doc: Doc): string {
+  const fileName = doc.id.split('/').filter(Boolean).at(-1) || doc.id || doc.title;
+  return `${getLabel(doc.lang, 'tocToggle')} ${fileName}`;
 }
 
 function rewriteDocLinks(html: string, currentLang: Lang): string {
@@ -1262,6 +1758,14 @@ function assetExists(src: string): Promise<boolean> {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getLabel(lang: Lang, key: string): string {
+  return labels[lang][key] || labels.en[key] || key;
 }
 
 function escapeHtml(value: string): string {
