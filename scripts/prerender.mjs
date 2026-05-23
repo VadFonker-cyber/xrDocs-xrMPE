@@ -46,7 +46,7 @@ const siteMeta = {
   },
 };
 
-const template = fs.readFileSync(templatePath, 'utf8');
+const template = inlineStylesheets(fs.readFileSync(templatePath, 'utf8'));
 const navConfig = createNavConfig();
 const docs = readDocs().sort(compareDocs);
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
@@ -351,6 +351,35 @@ function getDocPath(lang, id) {
 
 function getAssetPath(src) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
+}
+
+function inlineStylesheets(html) {
+  return html.replace(/<link\s+rel="stylesheet"\s+[^>]*href="([^"]+)"[^>]*>/g, (tag, href) => {
+    const filePath = getDistAssetPath(href);
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return tag;
+    }
+
+    return `<style>\n${fs.readFileSync(filePath, 'utf8')}\n</style>`;
+  });
+}
+
+function getDistAssetPath(href) {
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(href)) {
+    return undefined;
+  }
+
+  const withoutQuery = href.split(/[?#]/)[0];
+  const relativePath = withoutQuery.startsWith(basePath)
+    ? withoutQuery.slice(basePath.length)
+    : withoutQuery.replace(/^\//, '');
+
+  if (!relativePath.startsWith('assets/')) {
+    return undefined;
+  }
+
+  return path.join(distDir, ...relativePath.split('/'));
 }
 
 function isLocalAssetSrc(src) {

@@ -17,7 +17,7 @@ This page shows the content elements supported by the documentation: local image
 | Material type | Example document |
 | Images | Stored in `public/assets/examples` |
 | Markdown link | `./assets/examples/xrdocs-icon.png` |
-| Theme variants | `xrdocs-icon.dark.png` and `xrdocs-icon.light.png` next to the base image |
+| Theme variants | Use an explicit `*.dark.png` or `*.light.png` Markdown link to enable theme switching |
 | Purpose | Visual check for imported or manually written pages |
 
 ## Table

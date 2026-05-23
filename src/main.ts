@@ -144,9 +144,12 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
   if (srcIndex >= 0) {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
-    if (isThemeAssetSrc(src)) {
+    if (isLocalAssetSrc(src)) {
       token.attrSet('src', getAssetUrl(src));
-      token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src)));
+
+      if (isThemeAssetSrc(src)) {
+        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src)));
+      }
     }
   }
 
@@ -503,7 +506,10 @@ function renderShell(): void {
       <button id="navOverlay" class="nav-overlay" type="button" aria-label="Close navigation"></button>
       <aside class="sidebar" aria-label="${copy.ariaNav}">
         <div class="brand">
-          <img class="brand-mark" src="${getAssetUrl('./xrdocs-icon.png')}" data-theme-asset-base="${getAssetUrl('./xrdocs-icon.png')}" alt="" aria-hidden="true" />
+          <picture>
+            <source srcset="${getAssetUrl('./xrdocs-brand.webp')}" type="image/webp" />
+            <img class="brand-mark" src="${getAssetUrl('./xrdocs-brand.png')}" width="42" height="42" alt="" aria-hidden="true" />
+          </picture>
           <div>
             <div class="brand-title">xrDocs</div>
             <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>
@@ -1063,11 +1069,15 @@ function getDocUrl(lang: Lang, id: string): string {
 }
 
 function getAssetUrl(src: string): string {
-  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src)) {
+  if (!isLocalAssetSrc(src)) {
     return src;
   }
 
   return `${basePath}${src.replace(/^\.?\//, '')}`;
+}
+
+function isLocalAssetSrc(src: string): boolean {
+  return !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src);
 }
 
 function navigateToLink(event: MouseEvent, link: HTMLAnchorElement): void {
@@ -1214,10 +1224,9 @@ function splitAssetSrc(src: string): { path: string; suffix: string } {
 
 function isThemeAssetSrc(src: string): boolean {
   const { path } = splitAssetSrc(src);
-  const external = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src);
-  const extension = new RegExp(`\\.(${themeAssetExtensions})$`, 'i');
+  const themedExtension = new RegExp(`\\.(dark|light)\\.(${themeAssetExtensions})$`, 'i');
 
-  return !external && extension.test(path);
+  return isLocalAssetSrc(src) && themedExtension.test(path);
 }
 
 function assetExists(src: string): Promise<boolean> {
