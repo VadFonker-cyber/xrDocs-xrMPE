@@ -29,6 +29,8 @@ type Doc = {
   title: string;
   content: string;
   meta: DocMeta;
+  plainText?: string;
+  searchText?: string;
 };
 
 type Route = {
@@ -1270,7 +1272,7 @@ function getSearchResults(query: string): SearchResult[] {
       const title = normalizeSearch(doc.title, state.lang);
       const section = normalizeSearch(doc.meta.section, state.lang);
       const summary = normalizeSearch(doc.meta.summary, state.lang);
-      const content = normalizeSearch(stripMarkdown(doc.content), state.lang);
+      const content = getDocSearchText(doc);
       let score = 0;
 
       for (const term of terms) {
@@ -1302,7 +1304,7 @@ function getSearchResults(query: string): SearchResult[] {
 }
 
 function createExcerpt(doc: Doc, terms: string[]): string {
-  const text = [doc.meta.summary, stripMarkdown(doc.content)].filter(Boolean).join(' ');
+  const text = [doc.meta.summary, getDocPlainText(doc)].filter(Boolean).join(' ');
   const normalized = normalizeSearch(text, doc.lang);
   const firstMatch = terms
     .map((term) => normalized.indexOf(term))
@@ -1314,6 +1316,22 @@ function createExcerpt(doc: Doc, terms: string[]): string {
   const suffix = end < text.length ? '...' : '';
 
   return `${prefix}${text.slice(start, end).trim()}${suffix}`;
+}
+
+function getDocSearchText(doc: Doc): string {
+  if (!doc.searchText) {
+    doc.searchText = normalizeSearch(getDocPlainText(doc), doc.lang);
+  }
+
+  return doc.searchText;
+}
+
+function getDocPlainText(doc: Doc): string {
+  if (!doc.plainText) {
+    doc.plainText = stripMarkdown(doc.content);
+  }
+
+  return doc.plainText;
 }
 
 function stripMarkdown(value: string): string {
