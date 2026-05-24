@@ -1,14 +1,4 @@
-import MarkdownIt from 'markdown-it';
-import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
-import type Token from 'markdown-it/lib/token.mjs';
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import dos from 'highlight.js/lib/languages/dos';
-import ini from 'highlight.js/lib/languages/ini';
-import markdown from 'highlight.js/lib/languages/markdown';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import powershell from 'highlight.js/lib/languages/powershell';
-import xml from 'highlight.js/lib/languages/xml';
+import type { RenderedDoc, TocItem } from './markdown-renderer';
 import { collectEvent, collectPageView, initStatistics } from './statistics';
 import './styles.css';
 
@@ -47,19 +37,6 @@ type SearchResult = {
   doc: Doc;
   score: number;
   excerpt: string;
-};
-
-type TocItem = {
-  id: string;
-  title: string;
-  level: number;
-  children: TocItem[];
-  parentId?: string;
-};
-
-type RenderedDoc = {
-  html: string;
-  toc: TocItem[];
 };
 
 type NavConfig = Record<Lang, Map<string, NavEntry>>;
@@ -132,175 +109,6 @@ const labels: Record<Lang, Record<string, string>> = {
   },
 };
 
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  typographer: true,
-  langPrefix: 'language-',
-  highlight: highlightCode,
-});
-
-hljs.registerLanguage('ini', ini);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('bat', dos);
-hljs.registerLanguage('batch', dos);
-hljs.registerLanguage('cmd', dos);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('powershell', powershell);
-hljs.registerLanguage('ps1', powershell);
-hljs.registerLanguage('pwsh', powershell);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('text', plaintext);
-hljs.registerLanguage('plaintext', plaintext);
-hljs.registerLanguage('xml', xml);
-
-md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
-
-const defaultImageRule = md.renderer.rules.image;
-
-(['th_open', 'td_open'] as const).forEach((ruleName) => {
-  const defaultRule = md.renderer.rules[ruleName];
-
-  md.renderer.rules[ruleName] = (tokens, index, options, env, self) => {
-    const token = tokens[index];
-    const style = token.attrGet('style') || '';
-    const alignment = style.match(/text-align\s*:\s*(left|center|right)/i)?.[1]?.toLowerCase();
-
-    if (alignment) {
-      token.attrSet('data-align', alignment);
-    }
-
-    return defaultRule
-      ? defaultRule(tokens, index, options, env, self)
-      : self.renderToken(tokens, index, options);
-  };
-});
-
-md.renderer.rules.image = (tokens, index, options, env, self) => {
-  const token = tokens[index];
-  const srcIndex = token.attrIndex('src');
-
-  if (srcIndex >= 0) {
-    const src = token.attrs?.[srcIndex]?.[1] || '';
-
-    if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetUrl(src));
-
-      if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src)));
-      }
-    }
-  }
-
-  return defaultImageRule
-    ? defaultImageRule(tokens, index, options, env, self)
-    : self.renderToken(tokens, index, options);
-};
-
-function applyTableColumnOptions(state: StateCore): void {
-  const tokens = state.tokens;
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (tokens[index].type !== 'table_open') {
-      continue;
-    }
-
-    const tableEnd = findClosingToken(tokens, index, 'table_close');
-    if (tableEnd === -1) {
-      continue;
-    }
-
-    applyTableNowrapColumns(tokens, index, tableEnd);
-    index = tableEnd;
-  }
-}
-
-function applyTableNowrapColumns(tokens: Token[], tableStart: number, tableEnd: number): void {
-  const nowrapColumns = new Set<number>();
-  let headerColumn = 0;
-  let insideHeaderRow = false;
-
-  for (let index = tableStart; index < tableEnd; index += 1) {
-    const token = tokens[index];
-
-    if (token.type === 'thead_close') {
-      break;
-    }
-
-    if (token.type === 'tr_open') {
-      insideHeaderRow = true;
-      headerColumn = 0;
-      continue;
-    }
-
-    if (insideHeaderRow && token.type === 'tr_close') {
-      insideHeaderRow = false;
-      continue;
-    }
-
-    if (!insideHeaderRow || token.type !== 'th_open') {
-      continue;
-    }
-
-    const inline = tokens[index + 1];
-    if (inline?.type === 'inline' && stripNowrapMarker(inline)) {
-      nowrapColumns.add(headerColumn);
-    }
-
-    headerColumn += 1;
-  }
-
-  if (!nowrapColumns.size) {
-    return;
-  }
-
-  let column = 0;
-
-  for (let index = tableStart; index < tableEnd; index += 1) {
-    const token = tokens[index];
-
-    if (token.type === 'tr_open') {
-      column = 0;
-      continue;
-    }
-
-    if (token.type !== 'th_open' && token.type !== 'td_open') {
-      continue;
-    }
-
-    if (nowrapColumns.has(column)) {
-      token.attrSet('data-nowrap', 'true');
-    }
-
-    column += 1;
-  }
-}
-
-function stripNowrapMarker(token: Token): boolean {
-  const marker = /\s*\{nowrap\}\s*/g;
-  const original = token.content;
-  token.content = token.content.replace(marker, ' ').replace(/\s{2,}/g, ' ').trim();
-
-  token.children?.forEach((child) => {
-    if (child.type === 'text') {
-      child.content = child.content.replace(marker, ' ').replace(/\s{2,}/g, ' ').trim();
-    }
-  });
-
-  return token.content !== original;
-}
-
-function findClosingToken(tokens: Token[], start: number, closingType: string): number {
-  for (let index = start + 1; index < tokens.length; index += 1) {
-    if (tokens[index].type === closingType) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
 const navConfig = createNavConfig(markdownFiles);
 let lastCollectedPage = '';
 let searchStatisticsTimer: number | undefined;
@@ -308,6 +116,8 @@ let lastCollectedSearch = '';
 let headingObserver: IntersectionObserver | undefined;
 let currentTocDocKey = '';
 let currentTocItems: TocItem[] = [];
+let articleRenderRequest = 0;
+const renderedDocCache = new Map<string, RenderedDoc>();
 const minTocWidth = 280;
 const maxTocWidth = 560;
 
@@ -393,7 +203,12 @@ window.addEventListener('popstate', () => {
 
 colorSchemeQuery.addEventListener('change', () => {
   if (state.theme === 'auto') {
-    render();
+    document.documentElement.dataset.theme = getResolvedTheme();
+    const activeDoc = getActiveDoc();
+    if (activeDoc) {
+      renderTopbarControls(activeDoc);
+    }
+    updateThemeAssets(appRoot);
   }
 });
 
@@ -628,6 +443,17 @@ function renderShell(): void {
     renderNav();
   });
 
+  document.querySelector<HTMLElement>('#docNav')?.addEventListener('click', (event) => {
+    const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a.doc-link');
+
+    if (!link) {
+      return;
+    }
+
+    navigateToLink(event, link);
+    setNavOpen(false);
+  });
+
   document.querySelector<HTMLButtonElement>('#navToggle')?.addEventListener('click', () => {
     setNavOpen(!state.navOpen);
   });
@@ -665,6 +491,49 @@ function renderShell(): void {
     renderToc();
   });
 
+  document.querySelector<HTMLElement>('#tocNav')?.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    const toggle = target?.closest<HTMLButtonElement>('button.toc-item-toggle');
+
+    if (toggle) {
+      const id = toggle.dataset.headingId;
+
+      if (!id) {
+        return;
+      }
+
+      if (state.tocCollapsedIds.has(id)) {
+        state.tocCollapsedIds.delete(id);
+      } else {
+        state.tocCollapsedIds.add(id);
+      }
+
+      renderToc();
+      return;
+    }
+
+    const link = target?.closest<HTMLAnchorElement>('a.toc-link');
+    if (!link) {
+      return;
+    }
+
+    event.preventDefault();
+    const id = link.dataset.headingId;
+    const heading = id ? document.getElementById(id) : null;
+
+    if (!id || !heading) {
+      return;
+    }
+
+    setActiveHeading(id);
+    history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(id)}`);
+    heading.scrollIntoView({ block: 'start', behavior: 'smooth' });
+
+    if (window.matchMedia('(max-width: 1100px)').matches) {
+      setTocOpen(false);
+    }
+  });
+
   document.querySelector<HTMLButtonElement>('#languageToggle')?.addEventListener('click', () => {
     switchLanguage(state.lang === 'ru' ? 'en' : 'ru');
   });
@@ -682,8 +551,7 @@ function renderShell(): void {
 }
 
 function render(): void {
-  const langDocs = getDocsByLang(state.lang);
-  const activeDoc = langDocs.find((doc) => doc.id === state.activeId) || langDocs[0] || docs[0];
+  const activeDoc = getActiveDoc();
 
   if (!activeDoc) {
     return;
@@ -710,6 +578,8 @@ function render(): void {
     state.tocQuery = '';
     state.tocCollapsedIds = new Set<string>();
     state.activeHeadingId = '';
+    currentTocItems = [];
+    headingObserver?.disconnect();
   }
 
   const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
@@ -719,85 +589,42 @@ function render(): void {
   }
 
   renderTopbarControls(activeDoc);
-
-  const article = document.querySelector<HTMLElement>('#docArticle');
-  if (article) {
-    const renderedDoc = renderDocContent(activeDoc.content, state.lang);
-    currentTocItems = renderedDoc.toc;
-    article.innerHTML = renderedDoc.html;
-    observeArticleHeadings(article);
-  }
-
   renderNav();
   renderToc();
-  updateThemeAssets(appRoot);
   collectCurrentPage(activeDoc);
+  void renderActiveArticle(activeDoc);
 }
 
-function renderDocContent(content: string, lang: Lang): RenderedDoc {
-  const tokens = md.parse(content, {});
-  const toc = createToc(tokens, lang);
+async function renderActiveArticle(activeDoc: Doc): Promise<void> {
+  const request = ++articleRenderRequest;
+  const article = document.querySelector<HTMLElement>('#docArticle');
+  const cacheKey = getDocCacheKey(activeDoc);
+  let renderedDoc = renderedDocCache.get(cacheKey);
 
-  return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, {}), lang),
-    toc,
-  };
-}
-
-function createToc(tokens: Token[], lang: Lang): TocItem[] {
-  const roots: TocItem[] = [];
-  const stack: TocItem[] = [];
-  const slugCounts = new Map<string, number>();
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-
-    if (token.type !== 'heading_open') {
-      continue;
-    }
-
-    const level = Number(token.tag.slice(1));
-    const inline = tokens[index + 1];
-    const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
-    slugCounts.set(baseSlug, count);
-    token.attrSet('id', id);
-
-    const item: TocItem = {
-      id,
-      title: title || id,
-      level,
-      children: [],
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent) {
-      item.parentId = parent.id;
-      parent.children.push(item);
-    } else {
-      roots.push(item);
-    }
-
-    stack.push(item);
+  if (!article) {
+    return;
   }
 
-  return roots;
-}
+  if (!renderedDoc) {
+    article.setAttribute('aria-busy', 'true');
+    const { renderDocContent } = await import('./markdown-renderer');
+    renderedDoc = renderDocContent(activeDoc.content, activeDoc.lang, { basePath });
+    renderedDocCache.set(cacheKey, renderedDoc);
+  }
 
-function slugifyHeading(value: string, lang: Lang): string {
-  return value
-    .toLocaleLowerCase(lang)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
+  if (request !== articleRenderRequest || state.lang !== activeDoc.lang || state.activeId !== activeDoc.id) {
+    return;
+  }
+
+  currentTocItems = renderedDoc.toc;
+  if (article.dataset.docKey !== cacheKey) {
+    article.innerHTML = renderedDoc.html;
+    article.dataset.docKey = cacheKey;
+  }
+  article.removeAttribute('aria-busy');
+  observeArticleHeadings(article);
+  renderToc();
+  updateThemeAssets(article);
 }
 
 function renderToc(): void {
@@ -857,44 +684,6 @@ function renderToc(): void {
   }
 
   nav.innerHTML = renderTocList(visibleItems, Boolean(query));
-
-  nav.querySelectorAll<HTMLAnchorElement>('a.toc-link').forEach((link) => {
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      const id = link.dataset.headingId;
-      const heading = id ? document.getElementById(id) : null;
-
-      if (!id || !heading) {
-        return;
-      }
-
-      setActiveHeading(id);
-      history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(id)}`);
-      heading.scrollIntoView({ block: 'start', behavior: 'smooth' });
-
-      if (window.matchMedia('(max-width: 1100px)').matches) {
-        setTocOpen(false);
-      }
-    });
-  });
-
-  nav.querySelectorAll<HTMLButtonElement>('button.toc-item-toggle').forEach((button) => {
-    button.addEventListener('click', () => {
-      const id = button.dataset.headingId;
-
-      if (!id) {
-        return;
-      }
-
-      if (state.tocCollapsedIds.has(id)) {
-        state.tocCollapsedIds.delete(id);
-      } else {
-        state.tocCollapsedIds.add(id);
-      }
-
-      renderToc();
-    });
-  });
 }
 
 function renderTocList(items: TocItem[], forceOpen: boolean): string {
@@ -1214,13 +1003,6 @@ function renderNav(): void {
   if (!getDocsByLang(state.lang).length) {
     nav.innerHTML = `<p class="empty">${labels[state.lang].empty}</p>`;
   }
-
-  nav.querySelectorAll<HTMLAnchorElement>('a.doc-link').forEach((link) => {
-    link.addEventListener('click', (event) => {
-      navigateToLink(event, link);
-      setNavOpen(false);
-    });
-  });
 }
 
 function renderSearchResults(nav: HTMLElement, query: string): void {
@@ -1250,13 +1032,6 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
         .join('')}
     </section>
   `;
-
-  nav.querySelectorAll<HTMLAnchorElement>('a.doc-link').forEach((link) => {
-    link.addEventListener('click', (event) => {
-      navigateToLink(event, link);
-      setNavOpen(false);
-    });
-  });
 }
 
 function getSearchResults(query: string): SearchResult[] {
@@ -1365,20 +1140,6 @@ function highlight(value: string, query: string, lang: Lang): string {
   return escapeHtml(value).replace(pattern, '<mark>$1</mark>');
 }
 
-function highlightCode(source: string, language: string): string {
-  const lang = language.trim().toLowerCase();
-
-  try {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(source, { language: lang, ignoreIllegals: true }).value;
-    }
-
-    return hljs.highlightAuto(source).value;
-  } catch {
-    return escapeHtml(source);
-  }
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1418,7 +1179,11 @@ function switchTheme(nextTheme: ThemePreference): void {
     theme: nextTheme,
     resolved_theme: getResolvedTheme(),
   });
-  render();
+  const activeDoc = getActiveDoc();
+  if (activeDoc) {
+    renderTopbarControls(activeDoc);
+  }
+  updateThemeAssets(appRoot);
 }
 
 function setNavOpen(open: boolean): void {
@@ -1469,6 +1234,15 @@ function setTocWidth(width: number): void {
 
 function getDocsByLang(lang: Lang): Doc[] {
   return docs.filter((doc) => doc.lang === lang);
+}
+
+function getActiveDoc(): Doc | undefined {
+  const langDocs = getDocsByLang(state.lang);
+  return langDocs.find((doc) => doc.id === state.activeId) || langDocs[0] || docs[0];
+}
+
+function getDocCacheKey(doc: Doc): string {
+  return `${doc.lang}:${doc.id}`;
 }
 
 function readRoute(): Route {
@@ -1530,7 +1304,17 @@ function readTheme(): ThemePreference {
 }
 
 function readTocOpen(): boolean {
-  return localStorage.getItem('xrDocsTocOpen') !== 'false';
+  const savedValue = localStorage.getItem('xrDocsTocOpen');
+
+  if (savedValue === 'true') {
+    return true;
+  }
+
+  if (savedValue === 'false') {
+    return false;
+  }
+
+  return false;
 }
 
 function readTocWidth(): number {
@@ -1574,19 +1358,6 @@ function getThemeToggleTitle(theme: ThemePreference): string {
 function getTocTitle(doc: Doc): string {
   const fileName = doc.id.split('/').filter(Boolean).at(-1) || doc.id || doc.title;
   return `${getLabel(doc.lang, 'tocToggle')} ${fileName}`;
-}
-
-function rewriteDocLinks(html: string, currentLang: Lang): string {
-  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (_match, link: string) => {
-    const [path, hash = ''] = link.split('#');
-    const normalized = path
-      .replace(/^\.\//, '')
-      .replace(/^docs\//, '')
-      .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/, '');
-
-    return `href="${getDocUrl(currentLang, normalized)}${hash ? `#${hash}` : ''}"`;
-  });
 }
 
 function getDocUrl(lang: Lang, id: string): string {
@@ -1731,13 +1502,6 @@ function createThemeAssetSrc(baseSrc: string, theme: Theme): string {
   return `${path.replace(extension, `.${theme}.$1`)}${suffix}`;
 }
 
-function normalizeThemeAssetSrc(src: string): string {
-  const { path, suffix } = splitAssetSrc(src);
-  const themedSuffix = new RegExp(`\\.(dark|light)(\\.(${themeAssetExtensions}))$`, 'i');
-
-  return `${path.replace(themedSuffix, '$2')}${suffix}`;
-}
-
 function splitAssetSrc(src: string): { path: string; suffix: string } {
   const match = src.match(/^([^?#]+)([?#].*)?$/);
 
@@ -1745,13 +1509,6 @@ function splitAssetSrc(src: string): { path: string; suffix: string } {
     path: match?.[1] || src,
     suffix: match?.[2] || '',
   };
-}
-
-function isThemeAssetSrc(src: string): boolean {
-  const { path } = splitAssetSrc(src);
-  const themedExtension = new RegExp(`\\.(dark|light)\\.(${themeAssetExtensions})$`, 'i');
-
-  return isLocalAssetSrc(src) && themedExtension.test(path);
 }
 
 function assetExists(src: string): Promise<boolean> {
