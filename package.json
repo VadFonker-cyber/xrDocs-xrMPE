@@ -7,9 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --open /",
+    "dev": "npm run prepare:content && vite --host 127.0.0.1 --open /",
     "optimize:assets": "node scripts/optimize-assets.mjs",
-    "build": "npm run optimize:assets && tsc && vite build && node scripts/prerender.mjs",
+    "prepare:content": "node scripts/generate-content-data.mjs",
+    "build": "npm run optimize:assets && npm run prepare:content && tsc && vite build && node scripts/prerender.mjs",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

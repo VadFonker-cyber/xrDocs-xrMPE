@@ -10,6 +10,7 @@ const templatePath = path.join(distDir, 'index.html');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/');
 const siteName = 'xrDocs';
+const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 const md = new MarkdownIt({
   html: false,
   linkify: true,
@@ -27,6 +28,10 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
 
     if (isLocalAssetSrc(src)) {
       token.attrSet('src', getAssetPath(src));
+
+      if (isThemeAssetSrc(src)) {
+        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(src)));
+      }
     }
   }
 
@@ -46,7 +51,7 @@ const siteMeta = {
   },
 };
 
-const template = inlineStylesheets(fs.readFileSync(templatePath, 'utf8'));
+const template = fs.readFileSync(templatePath, 'utf8');
 const navConfig = createNavConfig();
 const docs = readDocs().sort(compareDocs);
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
@@ -242,19 +247,87 @@ function writePage(doc, canonicalPath, outputPath) {
 }
 
 function renderStaticBody(activeDoc) {
-  const nav = ['ru', 'en']
-    .map((lang) => {
-      const links = docs
-        .filter((doc) => doc.lang === lang)
-        .map((doc) => `<li><a href="${getDocPath(doc.lang, doc.id)}">${escapeHtml(doc.title)}</a></li>`)
+  const copy = readLabels(activeDoc.lang);
+  const nav = renderStaticNav(activeDoc);
+  const article = renderDocContent(activeDoc.content, activeDoc.lang);
+  const docKey = `${activeDoc.lang}:${activeDoc.id}`;
+
+  return `
+    <div class="layout" data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
+      <button class="nav-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeNavigation'] || '')}"></button>
+      <button class="toc-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeContents'] || '')}"></button>
+      <aside class="sidebar" aria-label="${escapeHtml(copy['aria.nav'] || 'Documentation navigation')}">
+        <div class="brand">
+          <picture>
+            <source srcset="${getAssetPath('./xrdocs-brand.webp')}" type="image/webp" />
+            <img class="brand-mark" src="${getAssetPath('./xrdocs-brand.png')}" width="42" height="42" alt="" aria-hidden="true" />
+          </picture>
+          <div>
+            <div class="brand-title">xrDocs</div>
+            <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>
+          </div>
+        </div>
+        <div class="search-panel">
+          <label class="search">
+            <span class="search-icon" aria-hidden="true"></span>
+            <input type="search" placeholder="${escapeHtml(copy['search.placeholder'] || '')}" autocomplete="off" />
+          </label>
+        </div>
+        <nav class="doc-nav">${nav}</nav>
+      </aside>
+      <main class="workspace">
+        <section class="topbar">
+          <div class="topbar-controls">
+            <button class="control-button nav-toggle" type="button" aria-label="${escapeHtml(copy['menu.label'] || 'Menu')}" aria-expanded="false">
+              <span class="menu-icon" aria-hidden="true"></span>
+              <span>${escapeHtml(copy['menu.label'] || 'Menu')}</span>
+            </button>
+            <button class="control-button" type="button" aria-label="${escapeHtml(copy['aria.switchLanguage'] || '')}">${activeDoc.lang.toUpperCase()}</button>
+            <button class="icon-button" type="button" aria-label="${escapeHtml(copy['aria.switchTheme'] || '')}"></button>
+            <button class="icon-button toc-toggle" type="button" aria-label="${escapeHtml(copy['toc.toggle'] || '')}" aria-expanded="false">
+              <span class="toc-icon" aria-hidden="true"></span>
+            </button>
+            <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub"></a>
+          </div>
+        </section>
+        <section class="content-grid">
+          <article id="docArticle" class="doc-article" data-doc-key="${escapeHtml(docKey)}" data-prerendered="true">${article}</article>
+        </section>
+      </main>
+      <aside class="toc-panel" aria-label="${escapeHtml(copy['toc.title'] || 'Contents')}">
+        <div class="toc-header"><h2>${escapeHtml(copy['toc.title'] || 'Contents')}</h2></div>
+      </aside>
+    </div>
+  `;
+}
+
+function renderStaticNav(activeDoc) {
+  const groups = new Map();
+
+  for (const doc of docs.filter((item) => item.lang === activeDoc.lang)) {
+    const group = groups.get(doc.meta.section) || [];
+    group.push(doc);
+    groups.set(doc.meta.section, group);
+  }
+
+  return Array.from(groups.entries())
+    .map(([section, sectionDocs]) => {
+      const links = sectionDocs
+        .map((doc) => {
+          const active = doc.id === activeDoc.id ? ' aria-current="page"' : '';
+
+          return `
+            <a class="doc-link" href="${getDocPath(doc.lang, doc.id)}"${active}>
+              <span>${escapeHtml(doc.title)}</span>
+              <small>${escapeHtml(doc.meta.summary || doc.path)}</small>
+            </a>
+          `;
+        })
         .join('');
 
-      return `<section><h2>${lang.toUpperCase()}</h2><ul>${links}</ul></section>`;
+      return `<section class="nav-section"><h2>${escapeHtml(section)}</h2>${links}</section>`;
     })
     .join('');
-  const article = rewriteDocLinks(md.render(activeDoc.content), activeDoc.lang);
-
-  return `<nav aria-label="Documentation">${nav}</nav><main><article>${article}</article></main>`;
 }
 
 function writeSitemap(pages) {
@@ -306,6 +379,43 @@ function formatSitemapDate(value) {
   return value.toISOString().slice(0, 10);
 }
 
+function renderDocContent(content, lang) {
+  const tokens = md.parse(content, {});
+  applyHeadingIds(tokens, lang);
+
+  return rewriteDocLinks(md.renderer.render(tokens, md.options, {}), lang);
+}
+
+function applyHeadingIds(tokens, lang) {
+  const slugCounts = new Map();
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'heading_open') {
+      continue;
+    }
+
+    const inline = tokens[index + 1];
+    const title = inline?.type === 'inline' ? inline.content.trim() : '';
+    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
+    const count = (slugCounts.get(baseSlug) || 0) + 1;
+    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
+    slugCounts.set(baseSlug, count);
+    token.attrSet('id', id);
+  }
+}
+
+function slugifyHeading(value, lang) {
+  return value
+    .toLocaleLowerCase(lang)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+
 function rewriteDocLinks(html, currentLang) {
   return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (_match, link) => {
     const [linkPath, hash = ''] = link.split('#');
@@ -317,6 +427,16 @@ function rewriteDocLinks(html, currentLang) {
 
     return `href="${getDocPath(currentLang, normalized)}${hash ? `#${hash}` : ''}"`;
   });
+}
+
+function readLabels(lang) {
+  const localePath = path.join(rootDir, 'src', 'locales', `${lang}.json`);
+
+  if (!fs.existsSync(localePath)) {
+    return {};
+  }
+
+  return JSON.parse(fs.readFileSync(localePath, 'utf8'));
 }
 
 function setMeta(html, attribute, name, content) {
@@ -351,6 +471,25 @@ function getDocPath(lang, id) {
 
 function getAssetPath(src) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
+}
+
+function isThemeAssetSrc(src) {
+  const { path: assetPath } = splitAssetSrc(src);
+  return /\.(dark|light)\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(assetPath);
+}
+
+function normalizeThemeAssetSrc(src) {
+  const { path: assetPath, suffix } = splitAssetSrc(src);
+  return `${assetPath.replace(/\.(dark|light)(\.(?:avif|gif|jpe?g|png|svg|webp))$/i, '$2')}${suffix}`;
+}
+
+function splitAssetSrc(src) {
+  const match = src.match(/^([^?#]+)([?#].*)?$/);
+
+  return {
+    path: match?.[1] || src,
+    suffix: match?.[2] || '',
+  };
 }
 
 function inlineStylesheets(html) {

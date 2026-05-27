@@ -1,4 +1,6 @@
 import type { RenderedDoc, TocItem } from './markdown-renderer';
+import docsManifest from './generated/docs-manifest.json';
+import themeAssetManifest from './generated/theme-assets.json';
 import { collectEvent, collectPageView, initStatistics } from './statistics';
 import { labels, type LabelKey } from './locales';
 import './styles.css';
@@ -18,10 +20,7 @@ type Doc = {
   lang: Lang;
   path: string;
   title: string;
-  content: string;
   meta: DocMeta;
-  plainText?: string;
-  searchText?: string;
 };
 
 type Route = {
@@ -40,12 +39,29 @@ type SearchResult = {
   excerpt: string;
 };
 
-type NavConfig = Record<Lang, Map<string, NavEntry>>;
+type DocsManifest = {
+  docs: Doc[];
+};
+
+type SearchIndexEntry = {
+  id: string;
+  lang: Lang;
+  path: string;
+  title: string;
+  section: string;
+  summary: string;
+  text: string;
+  searchText?: string;
+};
+
+type SearchIndex = {
+  docs: SearchIndexEntry[];
+};
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 const basePath = normalizeBasePath(import.meta.env.BASE_URL);
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
-const themeAssetCache = new Map<string, Promise<boolean>>();
+const themeAssetPaths = new Set((themeAssetManifest as string[]).map(normalizeAssetManifestPath));
 const siteMeta: Record<Lang, { description: string; locale: string }> = {
   ru: {
     description: 'Документация по моддингу S.T.A.L.K.E.R. для xrMPE.',
@@ -57,17 +73,19 @@ const siteMeta: Record<Lang, { description: string; locale: string }> = {
   },
 };
 
-const markdownFiles = import.meta.glob('../docs/{ru,en}/**/*.md', {
+const markdownLoaders = import.meta.glob(['../docs/{ru,en}/**/*.md', '!../docs/{ru,en}/init.md'], {
   query: '?raw',
   import: 'default',
-  eager: true,
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
-const navConfig = createNavConfig(markdownFiles);
 let lastCollectedPage = '';
 let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
+let searchIndexPromise: Promise<SearchIndexEntry[]> | undefined;
+let searchEntries: SearchIndexEntry[] | undefined;
+let searchRenderRequest = 0;
 let headingObserver: IntersectionObserver | undefined;
+let headingObserverFrame: number | undefined;
 let currentTocDocKey = '';
 let currentTocItems: TocItem[] = [];
 let articleRenderRequest = 0;
@@ -75,10 +93,7 @@ const renderedDocCache = new Map<string, RenderedDoc>();
 const minTocWidth = 280;
 const maxTocWidth = 560;
 
-const docs = Object.entries(markdownFiles)
-  .filter(([path]) => !isInitFile(path))
-  .map(([path, content]) => createDoc(path, content))
-  .sort(compareDocs);
+const docs = (docsManifest as DocsManifest).docs;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -133,39 +148,9 @@ colorSchemeQuery.addEventListener('change', () => {
   }
 });
 
-function createDoc(path: string, raw: string): Doc {
-  const { meta, content } = parseFrontmatter(raw);
-  const cleanPath = path.replace('../docs/', 'docs/');
-  const match = cleanPath.match(/^docs\/(ru|en)\/(.+)\.md$/);
-  const lang = (match?.[1] || 'ru') as Lang;
-  const id = match?.[2] || cleanPath.replace(/^docs\//, '').replace(/\.md$/, '');
-  const navEntry = navConfig[lang].get(id);
-
-  return {
-    id,
-    lang,
-    path: cleanPath,
-    title: extractTitle(content) || getLabel(lang, 'doc.untitled'),
-    content,
-    meta: {
-      summary: '',
-      ...meta,
-      section: navEntry?.section || String(meta.section || getLabel(lang, 'doc.defaultSection')),
-      order: navEntry?.order ?? Number(meta.order || 999),
-    },
-  };
-}
-
 function compareDocs(a: Doc, b: Doc): number {
   if (a.lang !== b.lang) {
     return a.lang.localeCompare(b.lang);
-  }
-
-  const aNav = navConfig[a.lang].get(a.id);
-  const bNav = navConfig[b.lang].get(b.id);
-
-  if (aNav || bNav) {
-    return (aNav?.order ?? 9999) - (bNav?.order ?? 9999);
   }
 
   if (a.meta.section !== b.meta.section) {
@@ -179,114 +164,16 @@ function compareDocs(a: Doc, b: Doc): number {
   return a.title.localeCompare(b.title, a.lang);
 }
 
-function createNavConfig(files: Record<string, string>): NavConfig {
-  const config: NavConfig = {
-    ru: new Map(),
-    en: new Map(),
-  };
-
-  for (const [path, content] of Object.entries(files)) {
-    if (!isInitFile(path)) {
-      continue;
-    }
-
-    const lang = getLangFromPath(path);
-    parseInit(content, lang).forEach((entry, id) => {
-      config[lang].set(id, entry);
-    });
-  }
-
-  return config;
-}
-
-function parseInit(content: string, lang: Lang): Map<string, NavEntry> {
-  const entries = new Map<string, NavEntry>();
-  let order = 0;
-  let currentSection: string | undefined;
-
-  for (const rawLine of content.split('\n')) {
-    const line = rawLine.trim();
-    const heading = line.match(/^#{1,6}\s+(.+)$/);
-    const link = line.match(/^\s*[-*]\s+\[([^\]]+)\]\(([^)]+\.md)\)/);
-
-    if (heading) {
-      currentSection = heading[1].trim();
-      continue;
-    }
-
-    if (!link) {
-      continue;
-    }
-
-    const id = normalizeDocId(link[2], lang);
-
-    if (id && id !== 'init') {
-      entries.set(id, {
-        order,
-        section: currentSection,
-      });
-      order += 1;
-    }
-  }
-
-  return entries;
-}
-
-function isInitFile(path: string): boolean {
-  return /\/init\.md$|\\init\.md$/.test(path);
-}
-
-function getLangFromPath(path: string): Lang {
-  return path.includes('/en/') || path.includes('\\en\\') ? 'en' : 'ru';
-}
-
-function normalizeDocId(path: string, lang: Lang): string {
-  return path
-    .split('#')[0]
-    .replace(/^\.\//, '')
-    .replace(/^docs\//, '')
-    .replace(new RegExp(`^${lang}/`), '')
-    .replace(/^(ru|en)\//, '')
-    .replace(/\.md$/, '');
-}
-
-function parseFrontmatter(raw: string): { meta: Partial<DocMeta>; content: string } {
-  if (!raw.startsWith('---')) {
-    return { meta: {}, content: raw };
-  }
-
-  const end = raw.indexOf('\n---', 3);
-
-  if (end === -1) {
-    return { meta: {}, content: raw };
-  }
-
-  const block = raw.slice(3, end).trim();
-  const content = raw.slice(end + 4).replace(/^\s+/, '');
-  const meta: Record<string, string> = {};
-
-  for (const line of block.split('\n')) {
-    const separator = line.indexOf(':');
-
-    if (separator === -1) {
-      continue;
-    }
-
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    meta[key] = value;
-  }
-
-  return { meta: meta as Partial<DocMeta>, content };
-}
-
-function extractTitle(content: string): string {
-  const heading = content.match(/^#\s+(.+)$/m);
-  return heading ? heading[1].trim() : '';
-}
-
 function renderShell(): void {
   const copy = labels[state.lang];
+  const activeDoc = getActiveDoc();
+  const prerenderedArticle = appRoot.querySelector<HTMLElement>('#docArticle');
+  const prerenderedDocKey = prerenderedArticle?.dataset.docKey;
+  const shouldKeepPrerenderedArticle = activeDoc && prerenderedDocKey === getDocCacheKey(activeDoc);
+  const prerenderedArticleHtml = shouldKeepPrerenderedArticle ? prerenderedArticle?.innerHTML || '' : '';
+  const prerenderedArticleAttributes = shouldKeepPrerenderedArticle
+    ? ` data-doc-key="${escapeHtml(prerenderedDocKey || '')}" data-prerendered="true"`
+    : '';
 
   appRoot.innerHTML = `
     <div class="layout" data-nav-open="false" data-toc-open="${state.tocOpen}" style="--toc-width: ${state.tocWidth}px">
@@ -335,7 +222,7 @@ function renderShell(): void {
         </section>
 
         <section class="content-grid">
-          <article id="docArticle" class="doc-article"></article>
+          <article id="docArticle" class="doc-article"${prerenderedArticleAttributes}>${prerenderedArticleHtml}</article>
         </section>
       </main>
 
@@ -362,6 +249,10 @@ function renderShell(): void {
   document.querySelector<HTMLInputElement>('#searchInput')?.addEventListener('input', (event) => {
     state.search = (event.currentTarget as HTMLInputElement).value;
     renderNav();
+  });
+
+  document.querySelector<HTMLInputElement>('#searchInput')?.addEventListener('focus', () => {
+    void loadSearchIndex();
   });
 
   document.querySelector<HTMLElement>('#docNav')?.addEventListener('click', (event) => {
@@ -501,6 +392,7 @@ function render(): void {
     state.activeHeadingId = '';
     currentTocItems = [];
     headingObserver?.disconnect();
+    cancelScheduledHeadingObserver();
   }
 
   const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
@@ -527,10 +419,19 @@ async function renderActiveArticle(activeDoc: Doc): Promise<void> {
     return;
   }
 
+  if (!renderedDoc && article.dataset.docKey === cacheKey && article.dataset.prerendered === 'true' && article.innerHTML.trim()) {
+    renderedDoc = {
+      html: article.innerHTML,
+      toc: createTocFromArticle(article),
+    };
+    renderedDocCache.set(cacheKey, renderedDoc);
+  }
+
   if (!renderedDoc) {
     article.setAttribute('aria-busy', 'true');
+    const content = await loadDocContent(activeDoc);
     const { renderDocContent } = await import('./markdown-renderer');
-    renderedDoc = renderDocContent(activeDoc.content, activeDoc.lang, { basePath });
+    renderedDoc = renderDocContent(content, activeDoc.lang, { basePath });
     renderedDocCache.set(cacheKey, renderedDoc);
   }
 
@@ -544,9 +445,96 @@ async function renderActiveArticle(activeDoc: Doc): Promise<void> {
     article.dataset.docKey = cacheKey;
   }
   article.removeAttribute('aria-busy');
-  observeArticleHeadings(article);
+  setInitialActiveHeadingFromToc();
   renderToc();
+  scheduleArticleHeadingObserver(article, cacheKey);
   updateThemeAssets(article);
+}
+
+async function loadDocContent(doc: Doc): Promise<string> {
+  const loader = markdownLoaders[`../${doc.path}`];
+
+  if (!loader) {
+    throw new Error(`Markdown loader was not found for ${doc.path}.`);
+  }
+
+  return stripFrontmatter(await loader());
+}
+
+function stripFrontmatter(raw: string): string {
+  if (!raw.startsWith('---')) {
+    return raw;
+  }
+
+  const end = raw.indexOf('\n---', 3);
+
+  if (end === -1) {
+    return raw;
+  }
+
+  return raw.slice(end + 4).replace(/^\s+/, '');
+}
+
+function createTocFromArticle(article: HTMLElement): TocItem[] {
+  const roots: TocItem[] = [];
+  const stack: TocItem[] = [];
+
+  article.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]').forEach((heading) => {
+    const level = Number(heading.tagName.slice(1));
+    const item: TocItem = {
+      id: heading.id,
+      title: heading.textContent?.trim() || heading.id,
+      level,
+      children: [],
+    };
+
+    while (stack.length && stack[stack.length - 1].level >= level) {
+      stack.pop();
+    }
+
+    const parent = stack[stack.length - 1];
+    if (parent) {
+      item.parentId = parent.id;
+      parent.children.push(item);
+    } else {
+      roots.push(item);
+    }
+
+    stack.push(item);
+  });
+
+  return roots;
+}
+
+function setInitialActiveHeadingFromToc(): void {
+  const firstHeading = currentTocItems[0];
+
+  if (!state.activeHeadingId && firstHeading) {
+    state.activeHeadingId = firstHeading.id;
+  }
+}
+
+function scheduleArticleHeadingObserver(article: HTMLElement, cacheKey: string): void {
+  cancelScheduledHeadingObserver();
+
+  headingObserverFrame = window.requestAnimationFrame(() => {
+    headingObserverFrame = undefined;
+
+    if (article.dataset.docKey !== cacheKey) {
+      return;
+    }
+
+    observeArticleHeadings(article);
+  });
+}
+
+function cancelScheduledHeadingObserver(): void {
+  if (headingObserverFrame === undefined) {
+    return;
+  }
+
+  window.cancelAnimationFrame(headingObserverFrame);
+  headingObserverFrame = undefined;
 }
 
 function renderToc(): void {
@@ -901,10 +889,11 @@ function renderNav(): void {
   const query = state.search.trim();
 
   if (query) {
-    renderSearchResults(nav, query);
+    void renderSearchResults(nav, query);
     return;
   }
 
+  searchRenderRequest += 1;
   const groups = new Map<string, Doc[]>();
 
   for (const doc of getDocsByLang(state.lang)) {
@@ -942,8 +931,15 @@ function renderNav(): void {
   }
 }
 
-function renderSearchResults(nav: HTMLElement, query: string): void {
-  const results = getSearchResults(query);
+async function renderSearchResults(nav: HTMLElement, query: string): Promise<void> {
+  const request = ++searchRenderRequest;
+  const entries = searchEntries || await loadSearchIndex();
+
+  if (request !== searchRenderRequest || query !== state.search.trim()) {
+    return;
+  }
+
+  const results = getSearchResults(query, entries);
   scheduleSearchStatistics(query, results.length);
 
   if (!results.length) {
@@ -971,7 +967,30 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
   `;
 }
 
-function getSearchResults(query: string): SearchResult[] {
+async function loadSearchIndex(): Promise<SearchIndexEntry[]> {
+  if (searchEntries) {
+    return searchEntries;
+  }
+
+  if (!searchIndexPromise) {
+    searchIndexPromise = fetch(getAssetUrl('search-index.json'), { cache: 'force-cache' })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Search index request failed with ${response.status}.`);
+        }
+
+        return response.json() as Promise<SearchIndex>;
+      })
+      .then((index) => {
+        searchEntries = index.docs;
+        return searchEntries;
+      });
+  }
+
+  return searchIndexPromise;
+}
+
+function getSearchResults(query: string, entries: SearchIndexEntry[]): SearchResult[] {
   const normalizedQuery = normalizeSearch(query, state.lang);
   const terms = normalizedQuery.split(/\s+/).filter(Boolean);
 
@@ -979,12 +998,19 @@ function getSearchResults(query: string): SearchResult[] {
     return [];
   }
 
-  return getDocsByLang(state.lang)
-    .map((doc) => {
-      const title = normalizeSearch(doc.title, state.lang);
-      const section = normalizeSearch(doc.meta.section, state.lang);
-      const summary = normalizeSearch(doc.meta.summary, state.lang);
-      const content = getDocSearchText(doc);
+  return entries
+    .filter((entry) => entry.lang === state.lang)
+    .map((entry) => {
+      const doc = getDocByKey(entry.lang, entry.id);
+
+      if (!doc) {
+        return undefined;
+      }
+
+      const title = normalizeSearch(entry.title, state.lang);
+      const section = normalizeSearch(entry.section, state.lang);
+      const summary = normalizeSearch(entry.summary, state.lang);
+      const content = getSearchEntryText(entry);
       let score = 0;
 
       for (const term of terms) {
@@ -1008,16 +1034,17 @@ function getSearchResults(query: string): SearchResult[] {
       return {
         doc,
         score,
-        excerpt: createExcerpt(doc, terms),
+        excerpt: createExcerpt(entry, terms),
       };
     })
+    .filter((result): result is SearchResult => Boolean(result))
     .filter((result) => result.score > 0)
     .sort((a, b) => b.score - a.score || compareDocs(a.doc, b.doc));
 }
 
-function createExcerpt(doc: Doc, terms: string[]): string {
-  const text = [doc.meta.summary, getDocPlainText(doc)].filter(Boolean).join(' ');
-  const normalized = normalizeSearch(text, doc.lang);
+function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {
+  const text = [entry.summary, entry.text].filter(Boolean).join(' ');
+  const normalized = normalizeSearch(text, entry.lang);
   const firstMatch = terms
     .map((term) => normalized.indexOf(term))
     .filter((index) => index >= 0)
@@ -1030,32 +1057,12 @@ function createExcerpt(doc: Doc, terms: string[]): string {
   return `${prefix}${text.slice(start, end).trim()}${suffix}`;
 }
 
-function getDocSearchText(doc: Doc): string {
-  if (!doc.searchText) {
-    doc.searchText = normalizeSearch(getDocPlainText(doc), doc.lang);
+function getSearchEntryText(entry: SearchIndexEntry): string {
+  if (!entry.searchText) {
+    entry.searchText = normalizeSearch(entry.text, entry.lang);
   }
 
-  return doc.searchText;
-}
-
-function getDocPlainText(doc: Doc): string {
-  if (!doc.plainText) {
-    doc.plainText = stripMarkdown(doc.content);
-  }
-
-  return doc.plainText;
-}
-
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/^---[\s\S]*?\n---/, ' ')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    .replace(/[#>*_~\-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return entry.searchText;
 }
 
 function normalizeSearch(value: string, lang: Lang): string {
@@ -1173,6 +1180,10 @@ function getDocsByLang(lang: Lang): Doc[] {
   return docs.filter((doc) => doc.lang === lang);
 }
 
+function getDocByKey(lang: Lang, id: string): Doc | undefined {
+  return docs.find((doc) => doc.lang === lang && doc.id === id);
+}
+
 function getActiveDoc(): Doc | undefined {
   const langDocs = getDocsByLang(state.lang);
   return langDocs.find((doc) => doc.id === state.activeId) || langDocs[0] || docs[0];
@@ -1208,10 +1219,30 @@ function readRoute(): Route {
     return route;
   }
 
+  const prerenderedRoute = readPrerenderedRoute();
+
+  if (prerenderedRoute) {
+    return prerenderedRoute;
+  }
+
   return {
     lang: savedLang,
     id: '',
   };
+}
+
+function readPrerenderedRoute(): Route | undefined {
+  const docKey = document.querySelector<HTMLElement>('#docArticle[data-prerendered="true"]')?.dataset.docKey;
+  const [lang, ...idParts] = docKey?.split(':') || [];
+
+  if ((lang === 'ru' || lang === 'en') && idParts.length) {
+    return {
+      lang,
+      id: idParts.join(':'),
+    };
+  }
+
+  return undefined;
 }
 
 function readRouteFromPath(pathname: string): Route | undefined {
@@ -1393,24 +1424,23 @@ function updateThemeAssets(root: ParentNode): void {
 
     const requestKey = `${theme}:${baseSrc}`;
     image.dataset.themeAssetRequest = requestKey;
+    const nextSrc = resolveThemeAssetSrc(baseSrc, theme);
 
-    resolveThemeAssetSrc(baseSrc, theme).then((nextSrc) => {
-      if (image.dataset.themeAssetRequest !== requestKey) {
-        return;
-      }
+    if (image.dataset.themeAssetRequest !== requestKey) {
+      return;
+    }
 
-      if (image.getAttribute('src') !== nextSrc) {
-        image.setAttribute('src', nextSrc);
-      }
-    });
+    if (image.getAttribute('src') !== nextSrc) {
+      image.setAttribute('src', nextSrc);
+    }
   });
 }
 
-async function resolveThemeAssetSrc(baseSrc: string, theme: Theme): Promise<string> {
+function resolveThemeAssetSrc(baseSrc: string, theme: Theme): string {
   const candidates = createThemeAssetCandidates(baseSrc, theme);
 
   for (const candidate of candidates) {
-    if (await assetExists(candidate)) {
+    if (assetExists(candidate)) {
       return candidate;
     }
   }
@@ -1448,28 +1478,16 @@ function splitAssetSrc(src: string): { path: string; suffix: string } {
   };
 }
 
-function assetExists(src: string): Promise<boolean> {
-  const cacheKey = new URL(src, document.baseURI).href;
-  const cached = themeAssetCache.get(cacheKey);
-
-  if (cached) {
-    return cached;
-  }
-
-  const request = fetch(src, { method: 'HEAD', cache: 'force-cache' })
-    .then((response) => {
-      const contentType = response.headers.get('content-type') || '';
-
-      return response.ok && !contentType.includes('text/html');
-    })
-    .catch(() => false);
-
-  themeAssetCache.set(cacheKey, request);
-  return request;
+function assetExists(src: string): boolean {
+  return themeAssetPaths.has(normalizeAssetManifestPath(stripBasePath(new URL(src, document.baseURI).pathname)));
 }
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function normalizeAssetManifestPath(src: string): string {
+  return decodeURIComponent(src).replace(/^\/+|^\.\//g, '');
 }
 
 function clamp(value: number, min: number, max: number): number {

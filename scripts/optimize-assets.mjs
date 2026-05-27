@@ -5,7 +5,7 @@ import sharp from 'sharp';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicDir = path.join(rootDir, 'public');
-const sourceIcon = path.join(publicDir, 'xrdocs-icon.png');
+const sourceIcon = path.join(rootDir, 'scripts', 'assets', 'xrdocs-icon.png');
 
 const outputs = [
   {
