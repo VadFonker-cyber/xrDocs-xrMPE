@@ -1,5 +1,6 @@
 import type { RenderedDoc, TocItem } from './markdown-renderer';
 import { collectEvent, collectPageView, initStatistics } from './statistics';
+import { labels, type LabelKey } from './locales';
 import './styles.css';
 
 type Lang = 'ru' | 'en';
@@ -62,53 +63,6 @@ const markdownFiles = import.meta.glob('../docs/{ru,en}/**/*.md', {
   eager: true,
 }) as Record<string, string>;
 
-const labels: Record<Lang, Record<string, string>> = {
-  ru: {
-    ariaNav: 'Навигация по документации',
-    ariaInfo: 'Информация о документе',
-    search: 'Поиск по базе',
-    searchResults: 'Результаты поиска',
-    file: 'Файл',
-    section: 'Раздел',
-    materials: 'Материалы',
-    empty: 'Ничего не найдено.',
-    menu: 'Меню',
-    untitled: 'Без названия',
-    defaultSection: 'Материалы',
-    fallbackSummary: 'Добавьте Markdown-файлы в docs/ru или docs/en.',
-    fallbackBody: 'Создайте файлы в `docs/ru` и `docs/en`, и они появятся в навигации после сборки.',
-    toc: 'Содержание',
-    tocToggle: 'Структура',
-    tocSearch: 'Поиск по статье',
-    tocCollapseAll: 'Свернуть все',
-    tocExpandAll: 'Развернуть все',
-    tocEmpty: 'Не найдено ни одного заголовка.',
-    tocNoResults: 'Ничего не найдено в этой статье.',
-  },
-  en: {
-    ariaNav: 'Documentation navigation',
-    ariaInfo: 'Document information',
-    search: 'Search knowledge base',
-    searchResults: 'Search results',
-    file: 'File',
-    section: 'Section',
-    materials: 'Documents',
-    empty: 'No results found.',
-    menu: 'Menu',
-    untitled: 'Untitled',
-    defaultSection: 'Materials',
-    fallbackSummary: 'Add Markdown files to docs/ru or docs/en.',
-    fallbackBody: 'Create files in `docs/ru` and `docs/en`, and they will appear in navigation after build.',
-    toc: 'Contents',
-    tocToggle: 'Structure',
-    tocSearch: 'Search this article',
-    tocCollapseAll: 'Collapse all',
-    tocExpandAll: 'Expand all',
-    tocEmpty: 'No headings found.',
-    tocNoResults: 'No headings found in this article.',
-  },
-};
-
 const navConfig = createNavConfig(markdownFiles);
 let lastCollectedPage = '';
 let searchStatisticsTimer: number | undefined;
@@ -121,43 +75,10 @@ const renderedDocCache = new Map<string, RenderedDoc>();
 const minTocWidth = 280;
 const maxTocWidth = 560;
 
-let docs = Object.entries(markdownFiles)
+const docs = Object.entries(markdownFiles)
   .filter(([path]) => !isInitFile(path))
   .map(([path, content]) => createDoc(path, content))
   .sort(compareDocs);
-
-if (docs.length === 0) {
-  docs = [
-    createDoc(
-      '../docs/ru/start.md',
-      [
-        '---',
-        'section: База',
-        'order: 1',
-        `summary: ${labels.ru.fallbackSummary}`,
-        '---',
-        '',
-        '# Старт',
-        '',
-        labels.ru.fallbackBody,
-      ].join('\n'),
-    ),
-    createDoc(
-      '../docs/en/start.md',
-      [
-        '---',
-        'section: Basics',
-        'order: 1',
-        `summary: ${labels.en.fallbackSummary}`,
-        '---',
-        '',
-        '# Start',
-        '',
-        labels.en.fallbackBody,
-      ].join('\n'),
-    ),
-  ];
-}
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -224,12 +145,12 @@ function createDoc(path: string, raw: string): Doc {
     id,
     lang,
     path: cleanPath,
-    title: extractTitle(content) || labels[lang].untitled,
+    title: extractTitle(content) || getLabel(lang, 'doc.untitled'),
     content,
     meta: {
       summary: '',
       ...meta,
-      section: navEntry?.section || String(meta.section || labels[lang].defaultSection),
+      section: navEntry?.section || String(meta.section || getLabel(lang, 'doc.defaultSection')),
       order: navEntry?.order ?? Number(meta.order || 999),
     },
   };
@@ -369,9 +290,9 @@ function renderShell(): void {
 
   appRoot.innerHTML = `
     <div class="layout" data-nav-open="false" data-toc-open="${state.tocOpen}" style="--toc-width: ${state.tocWidth}px">
-      <button id="navOverlay" class="nav-overlay" type="button" aria-label="Close navigation"></button>
-      <button id="tocOverlay" class="toc-overlay" type="button" aria-label="Close contents"></button>
-      <aside class="sidebar" aria-label="${copy.ariaNav}">
+      <button id="navOverlay" class="nav-overlay" type="button" aria-label="${copy['aria.closeNavigation']}"></button>
+      <button id="tocOverlay" class="toc-overlay" type="button" aria-label="${copy['aria.closeContents']}"></button>
+      <aside class="sidebar" aria-label="${copy['aria.nav']}">
         <div class="brand">
           <picture>
             <source srcset="${getAssetUrl('./xrdocs-brand.webp')}" type="image/webp" />
@@ -386,7 +307,7 @@ function renderShell(): void {
         <div class="search-panel">
           <label class="search">
             <span class="search-icon" aria-hidden="true"></span>
-            <input id="searchInput" type="search" placeholder="${copy.search}" autocomplete="off" />
+            <input id="searchInput" type="search" placeholder="${copy['search.placeholder']}" autocomplete="off" />
           </label>
         </div>
 
@@ -396,13 +317,13 @@ function renderShell(): void {
       <main class="workspace">
         <section class="topbar">
           <div class="topbar-controls">
-            <button id="navToggle" class="control-button nav-toggle" type="button" aria-label="${copy.menu}" aria-expanded="false">
+            <button id="navToggle" class="control-button nav-toggle" type="button" aria-label="${copy['menu.label']}" aria-expanded="false">
               <span class="menu-icon" aria-hidden="true"></span>
-              <span>${copy.menu}</span>
+              <span>${copy['menu.label']}</span>
             </button>
-            <button id="languageToggle" class="control-button" type="button" aria-label="Switch language"></button>
-            <button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme" title="Switch theme"></button>
-            <button id="tocToggle" class="icon-button toc-toggle" type="button" aria-label="${getLabel(state.lang, 'tocToggle')}" title="${getLabel(state.lang, 'tocToggle')}" aria-expanded="${state.tocOpen}">
+            <button id="languageToggle" class="control-button" type="button" aria-label="${copy['aria.switchLanguage']}"></button>
+            <button id="themeToggle" class="icon-button" type="button" aria-label="${copy['aria.switchTheme']}" title="${copy['aria.switchTheme']}"></button>
+            <button id="tocToggle" class="icon-button toc-toggle" type="button" aria-label="${getLabel(state.lang, 'toc.toggle')}" title="${getLabel(state.lang, 'toc.toggle')}" aria-expanded="${state.tocOpen}">
               <span class="toc-icon" aria-hidden="true"></span>
             </button>
             <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
@@ -418,12 +339,12 @@ function renderShell(): void {
         </section>
       </main>
 
-      <aside id="tocPanel" class="toc-panel" aria-label="${getLabel(state.lang, 'toc')}">
-        <div id="tocResizeHandle" class="toc-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize contents panel"></div>
+      <aside id="tocPanel" class="toc-panel" aria-label="${getLabel(state.lang, 'toc.title')}">
+        <div id="tocResizeHandle" class="toc-resize-handle" role="separator" aria-orientation="vertical" aria-label="${getLabel(state.lang, 'aria.resizeContents')}"></div>
         <div class="toc-header">
-          <h2>${getLabel(state.lang, 'toc')}</h2>
+          <h2>${getLabel(state.lang, 'toc.title')}</h2>
           <div class="toc-actions">
-            <button id="tocSearchToggle" class="icon-button" type="button" aria-label="${getLabel(state.lang, 'tocSearch')}" title="${getLabel(state.lang, 'tocSearch')}" aria-pressed="false">
+            <button id="tocSearchToggle" class="icon-button" type="button" aria-label="${getLabel(state.lang, 'toc.search')}" title="${getLabel(state.lang, 'toc.search')}" aria-pressed="false">
               <span class="search-icon" aria-hidden="true"></span>
             </button>
             <button id="tocCollapseToggle" class="icon-button toc-collapse-toggle" type="button"></button>
@@ -431,7 +352,7 @@ function renderShell(): void {
         </div>
         <label class="search toc-search">
           <span class="search-icon" aria-hidden="true"></span>
-          <input id="tocSearchInput" type="search" placeholder="${getLabel(state.lang, 'tocSearch')}" autocomplete="off" />
+          <input id="tocSearchInput" type="search" placeholder="${getLabel(state.lang, 'toc.search')}" autocomplete="off" />
         </label>
         <nav id="tocNav" class="toc-nav"></nav>
       </aside>
@@ -584,10 +505,11 @@ function render(): void {
 
   const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
   if (searchInput) {
-    searchInput.placeholder = copy.search;
+    searchInput.placeholder = copy['search.placeholder'];
     searchInput.value = state.search;
   }
 
+  updateShellLabels();
   renderTopbarControls(activeDoc);
   renderNav();
   renderToc();
@@ -634,13 +556,18 @@ function renderToc(): void {
   const collapseToggle = document.querySelector<HTMLButtonElement>('#tocCollapseToggle');
   const searchToggle = document.querySelector<HTMLButtonElement>('#tocSearchToggle');
   const tocToggle = document.querySelector<HTMLButtonElement>('#tocToggle');
+  const heading = panel?.querySelector<HTMLHeadingElement>('.toc-header h2');
 
   if (!panel || !nav || !collapseToggle) {
     return;
   }
 
   panel.hidden = false;
+  panel.setAttribute('aria-label', getLabel(state.lang, 'toc.title'));
   panel.dataset.searchOpen = String(state.tocSearchOpen);
+  if (heading) {
+    heading.textContent = getLabel(state.lang, 'toc.title');
+  }
 
   if (tocToggle) {
     tocToggle.hidden = false;
@@ -648,18 +575,18 @@ function renderToc(): void {
   }
 
   if (input) {
-    input.placeholder = getLabel(state.lang, 'tocSearch');
+    input.placeholder = getLabel(state.lang, 'toc.search');
     input.value = state.tocQuery;
   }
 
   if (searchToggle) {
-    searchToggle.setAttribute('aria-label', getLabel(state.lang, 'tocSearch'));
-    searchToggle.setAttribute('title', getLabel(state.lang, 'tocSearch'));
+    searchToggle.setAttribute('aria-label', getLabel(state.lang, 'toc.search'));
+    searchToggle.setAttribute('title', getLabel(state.lang, 'toc.search'));
     searchToggle.setAttribute('aria-pressed', String(state.tocSearchOpen));
   }
 
   if (!currentTocItems.length) {
-    nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(state.lang, 'tocEmpty'))}</p>`;
+    nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(state.lang, 'toc.empty'))}</p>`;
     collapseToggle.hidden = true;
     return;
   }
@@ -671,15 +598,15 @@ function renderToc(): void {
 
   collapseToggle.hidden = false;
   collapseToggle.innerHTML = getCollapseIcon(allCollapsed);
-  collapseToggle.setAttribute('aria-label', getLabel(state.lang, allCollapsed ? 'tocExpandAll' : 'tocCollapseAll'));
-  collapseToggle.setAttribute('title', getLabel(state.lang, allCollapsed ? 'tocExpandAll' : 'tocCollapseAll'));
+  collapseToggle.setAttribute('aria-label', getLabel(state.lang, allCollapsed ? 'toc.expandAll' : 'toc.collapseAll'));
+  collapseToggle.setAttribute('title', getLabel(state.lang, allCollapsed ? 'toc.expandAll' : 'toc.collapseAll'));
   collapseToggle.onclick = () => {
     state.tocCollapsedIds = allCollapsed ? new Set<string>() : new Set(collapsibleIds);
     renderToc();
   };
 
   if (!visibleItems.length) {
-    nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(state.lang, 'tocNoResults'))}</p>`;
+    nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(state.lang, 'toc.noResults'))}</p>`;
     return;
   }
 
@@ -699,7 +626,7 @@ function renderTocItem(item: TocItem, forceOpen: boolean): string {
   const collapsed = !forceOpen && state.tocCollapsedIds.has(item.id);
   const active = item.id === state.activeHeadingId ? ' aria-current="true"' : '';
   const toggle = hasChildren
-    ? `<button class="toc-item-toggle" type="button" data-heading-id="${escapeHtml(item.id)}" aria-label="Toggle section" aria-expanded="${!collapsed}"></button>`
+    ? `<button class="toc-item-toggle" type="button" data-heading-id="${escapeHtml(item.id)}" aria-label="${getLabel(state.lang, 'aria.toggleSection')}" aria-expanded="${!collapsed}"></button>`
     : '<span class="toc-item-spacer" aria-hidden="true"></span>';
   const children = hasChildren && !collapsed ? renderTocList(item.children, forceOpen) : '';
 
@@ -883,19 +810,28 @@ function scheduleSearchStatistics(query: string, resultCount: number): void {
   }, 600);
 }
 
+function updateShellLabels(): void {
+  document.querySelector<HTMLButtonElement>('#navOverlay')?.setAttribute('aria-label', getLabel(state.lang, 'aria.closeNavigation'));
+  document.querySelector<HTMLButtonElement>('#tocOverlay')?.setAttribute('aria-label', getLabel(state.lang, 'aria.closeContents'));
+  document.querySelector<HTMLElement>('.sidebar')?.setAttribute('aria-label', getLabel(state.lang, 'aria.nav'));
+  document.querySelector<HTMLElement>('#tocResizeHandle')?.setAttribute('aria-label', getLabel(state.lang, 'aria.resizeContents'));
+  document.querySelector<HTMLButtonElement>('#languageToggle')?.setAttribute('aria-label', getLabel(state.lang, 'aria.switchLanguage'));
+  document.querySelector<HTMLButtonElement>('#themeToggle')?.setAttribute('aria-label', getLabel(state.lang, 'aria.switchTheme'));
+}
+
 function renderTopbarControls(activeDoc: Doc): void {
   const languageToggle = document.querySelector<HTMLButtonElement>('#languageToggle');
   if (languageToggle) {
     languageToggle.textContent = state.lang.toUpperCase();
-    languageToggle.title = state.lang === 'ru' ? 'Switch to English' : 'Switch to Russian';
+    languageToggle.title = getLabel(state.lang, state.lang === 'ru' ? 'language.switchToEnglish' : 'language.switchToRussian');
   }
 
   const navToggle = document.querySelector<HTMLButtonElement>('#navToggle');
   if (navToggle) {
-    navToggle.setAttribute('aria-label', labels[state.lang].menu);
+    navToggle.setAttribute('aria-label', getLabel(state.lang, 'menu.label'));
     const label = navToggle.querySelector('span:last-child');
     if (label) {
-      label.textContent = labels[state.lang].menu;
+      label.textContent = getLabel(state.lang, 'menu.label');
     }
   }
 
@@ -903,6 +839,7 @@ function renderTopbarControls(activeDoc: Doc): void {
   if (themeToggle) {
     themeToggle.innerHTML = getThemeIcon(state.theme);
     themeToggle.title = getThemeToggleTitle(state.theme);
+    themeToggle.setAttribute('aria-label', getLabel(state.lang, 'aria.switchTheme'));
   }
 
   const tocToggle = document.querySelector<HTMLButtonElement>('#tocToggle');
@@ -1001,7 +938,7 @@ function renderNav(): void {
     .join('');
 
   if (!getDocsByLang(state.lang).length) {
-    nav.innerHTML = `<p class="empty">${labels[state.lang].empty}</p>`;
+    nav.innerHTML = `<p class="empty">${getLabel(state.lang, 'doc.empty')}</p>`;
   }
 }
 
@@ -1010,13 +947,13 @@ function renderSearchResults(nav: HTMLElement, query: string): void {
   scheduleSearchStatistics(query, results.length);
 
   if (!results.length) {
-    nav.innerHTML = `<p class="empty">${labels[state.lang].empty}</p>`;
+    nav.innerHTML = `<p class="empty">${getLabel(state.lang, 'doc.empty')}</p>`;
     return;
   }
 
   nav.innerHTML = `
     <section class="nav-section search-results">
-      <h2>${escapeHtml(labels[state.lang].searchResults)} <span>${results.length}</span></h2>
+      <h2>${escapeHtml(getLabel(state.lang, 'search.results'))} <span>${results.length}</span></h2>
       ${results
         .map(({ doc, excerpt }) => {
           const active = doc.id === state.activeId ? ' aria-current="page"' : '';
@@ -1349,15 +1286,15 @@ function getNextThemePreference(theme: ThemePreference): ThemePreference {
 
 function getThemeToggleTitle(theme: ThemePreference): string {
   if (theme === 'auto') {
-    return `Follow system theme (${getResolvedTheme()})`;
+    return getLabel(state.lang, 'theme.followSystem').replace('{theme}', getResolvedTheme());
   }
 
-  return theme === 'dark' ? 'Switch to automatic theme' : 'Switch to dark theme';
+  return theme === 'dark' ? getLabel(state.lang, 'theme.switchToAuto') : getLabel(state.lang, 'theme.switchToDark');
 }
 
 function getTocTitle(doc: Doc): string {
   const fileName = doc.id.split('/').filter(Boolean).at(-1) || doc.id || doc.title;
-  return `${getLabel(doc.lang, 'tocToggle')} ${fileName}`;
+  return `${getLabel(doc.lang, 'toc.toggle')} ${fileName}`;
 }
 
 function getDocUrl(lang: Lang, id: string): string {
@@ -1539,7 +1476,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function getLabel(lang: Lang, key: string): string {
+function getLabel(lang: Lang, key: LabelKey): string {
   return labels[lang][key] || labels.en[key] || key;
 }
 
