@@ -10,7 +10,7 @@
   </p>
 
   <p>
-    <img src="../public/xrdocs-icon.png" alt="xrDocs" width="128" />
+    <img src="assets/xrdocs-icon.png" alt="xrDocs" width="128" />
   </p>
 
   <p>
