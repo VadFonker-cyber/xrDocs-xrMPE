@@ -18,10 +18,10 @@
       <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
     </a>
     <a href="https://vite.dev/">
-      <img src="https://img.shields.io/badge/Vite-7.3-646CFF.svg?logo=vite&logoColor=white" alt="Vite" />
+      <img src="https://img.shields.io/badge/Vite-8.0-646CFF.svg?logo=vite&logoColor=white" alt="Vite" />
     </a>
     <a href="https://www.typescriptlang.org/">
-      <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6.svg?logo=typescript&logoColor=white" alt="TypeScript" />
+      <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6.svg?logo=typescript&logoColor=white" alt="TypeScript" />
     </a>
     <a href="https://github.com/VadFonker-cyber/xrDocs-xrMPE/actions/workflows/pages.yml">
       <img src="https://github.com/VadFonker-cyber/xrDocs-xrMPE/actions/workflows/pages.yml/badge.svg" alt="Deploy Pages" />
