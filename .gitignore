@@ -9,3 +9,26 @@ public/search-index.json
 
 # Local verification artifacts
 .playwright-mcp/
+
+# AI coding agents and assistants
+# Source: https://github.com/fellowship-dev/agents-gitignore
+
+# Anthropic Claude Code
+CLAUDE.md
+.claude/
+
+# OpenAI Codex CLI
+AGENTS.md
+AGENTS.override.md
+codex.md
+.codex/
+
+# Google Gemini CLI
+GEMINI.md
+.gemini/
+
+# Cursor
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
