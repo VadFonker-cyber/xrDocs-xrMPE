@@ -1,46 +1,21 @@
-import type { RenderedDoc, TocItem } from './markdown-renderer';
-import docsManifest from './generated/docs-manifest.json';
 import themeAssetManifest from './generated/theme-assets.json';
 import { collectEvent, collectPageView, initStatistics } from './statistics';
 import { labels, type LabelKey } from './locales';
+import { compareDocs, docs, findNavNodePath, getDocByKey, getDocsByLang, navTree, type Doc, type Lang, type NavNode } from './docs';
 import './styles.css';
 
-type Lang = 'ru' | 'en';
 type Theme = 'dark' | 'light';
 type ThemePreference = Theme | 'auto';
-
-type DocMeta = {
-  section: string;
-  order: number;
-  summary: string;
-};
-
-type Doc = {
-  id: string;
-  lang: Lang;
-  path: string;
-  title: string;
-  meta: DocMeta;
-};
 
 type Route = {
   lang: Lang;
   id: string;
 };
 
-type NavEntry = {
-  order: number;
-  section?: string;
-};
-
 type SearchResult = {
   doc: Doc;
   score: number;
   excerpt: string;
-};
-
-type DocsManifest = {
-  docs: Doc[];
 };
 
 type SearchIndexEntry = {
@@ -58,6 +33,19 @@ type SearchIndex = {
   docs: SearchIndexEntry[];
 };
 
+type TocItem = {
+  id: string;
+  title: string;
+  level: number;
+  children: TocItem[];
+  parentId?: string;
+};
+
+type RenderedDoc = {
+  html: string;
+  toc: TocItem[];
+};
+
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 const basePath = normalizeBasePath(import.meta.env.BASE_URL);
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
@@ -73,11 +61,6 @@ const siteMeta: Record<Lang, { description: string; locale: string }> = {
   },
 };
 
-const markdownLoaders = import.meta.glob(['../docs/{ru,en}/**/*.md', '!../docs/{ru,en}/init.md'], {
-  query: '?raw',
-  import: 'default',
-}) as Record<string, () => Promise<string>>;
-
 let lastCollectedPage = '';
 let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
@@ -90,10 +73,9 @@ let currentTocDocKey = '';
 let currentTocItems: TocItem[] = [];
 let articleRenderRequest = 0;
 const renderedDocCache = new Map<string, RenderedDoc>();
+const renderedDocFetches = new Map<string, Promise<RenderedDoc>>();
 const minTocWidth = 280;
 const maxTocWidth = 560;
-
-const docs = (docsManifest as DocsManifest).docs;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -113,6 +95,7 @@ const state = {
   tocWidth: readTocWidth(),
   tocQuery: '',
   tocCollapsedIds: new Set<string>(),
+  navExpandedIds: new Set<string>(),
   activeHeadingId: '',
   theme: readTheme(),
 };
@@ -147,22 +130,6 @@ colorSchemeQuery.addEventListener('change', () => {
     updateThemeAssets(appRoot);
   }
 });
-
-function compareDocs(a: Doc, b: Doc): number {
-  if (a.lang !== b.lang) {
-    return a.lang.localeCompare(b.lang);
-  }
-
-  if (a.meta.section !== b.meta.section) {
-    return a.meta.section.localeCompare(b.meta.section, a.lang);
-  }
-
-  if (a.meta.order !== b.meta.order) {
-    return a.meta.order - b.meta.order;
-  }
-
-  return a.title.localeCompare(b.title, a.lang);
-}
 
 function renderShell(): void {
   const copy = labels[state.lang];
@@ -256,6 +223,28 @@ function renderShell(): void {
   });
 
   document.querySelector<HTMLElement>('#docNav')?.addEventListener('click', (event) => {
+    const toggle = (event.target as Element | null)?.closest<HTMLButtonElement>('button.nav-item-toggle');
+
+    if (toggle) {
+      const id = toggle.dataset.navId;
+
+      if (!id) {
+        return;
+      }
+
+      if (state.navExpandedIds.has(id)) {
+        state.navExpandedIds.delete(id);
+      } else {
+        state.navExpandedIds.add(id);
+      }
+
+      const expanded = state.navExpandedIds.has(id);
+      const item = toggle.closest<HTMLElement>('.nav-item');
+      toggle.setAttribute('aria-expanded', String(expanded));
+      item?.setAttribute('data-expanded', String(expanded));
+      return;
+    }
+
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a.doc-link');
 
     if (!link) {
@@ -429,9 +418,7 @@ async function renderActiveArticle(activeDoc: Doc): Promise<void> {
 
   if (!renderedDoc) {
     article.setAttribute('aria-busy', 'true');
-    const content = await loadDocContent(activeDoc);
-    const { renderDocContent } = await import('./markdown-renderer');
-    renderedDoc = renderDocContent(content, activeDoc.lang, { basePath });
+    renderedDoc = await loadRenderedDoc(activeDoc);
     renderedDocCache.set(cacheKey, renderedDoc);
   }
 
@@ -451,7 +438,56 @@ async function renderActiveArticle(activeDoc: Doc): Promise<void> {
   updateThemeAssets(article);
 }
 
-async function loadDocContent(doc: Doc): Promise<string> {
+async function loadRenderedDoc(doc: Doc): Promise<RenderedDoc> {
+  const cacheKey = getDocCacheKey(doc);
+  const cachedFetch = renderedDocFetches.get(cacheKey);
+
+  if (cachedFetch) {
+    return cachedFetch;
+  }
+
+  const fetchPromise = import.meta.env.DEV ? renderMarkdownDoc(doc) : fetchPrerenderedDoc(doc);
+  renderedDocFetches.set(cacheKey, fetchPromise);
+
+  try {
+    return await fetchPromise;
+  } catch (error) {
+    renderedDocFetches.delete(cacheKey);
+    throw error;
+  }
+}
+
+async function fetchPrerenderedDoc(doc: Doc): Promise<RenderedDoc> {
+  const response = await fetch(getDocUrl(doc.lang, doc.id), { cache: 'force-cache' });
+
+  if (!response.ok) {
+    throw new Error(`Prerendered document request failed for ${doc.path} with ${response.status}.`);
+  }
+
+  const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+  const article = page.querySelector<HTMLElement>('#docArticle');
+
+  if (!article) {
+    throw new Error(`Prerendered article was not found for ${doc.path}.`);
+  }
+
+  return {
+    html: article.innerHTML,
+    toc: createTocFromArticle(article),
+  };
+}
+
+async function renderMarkdownDoc(doc: Doc): Promise<RenderedDoc> {
+  const content = await loadDevDocContent(doc);
+  const { renderDocContent } = await import('./markdown-renderer');
+  return renderDocContent(content, doc.lang, { basePath });
+}
+
+async function loadDevDocContent(doc: Doc): Promise<string> {
+  const markdownLoaders = import.meta.glob(['../docs/{ru,en}/**/*.md', '!../docs/{ru,en}/init.md'], {
+    query: '?raw',
+    import: 'default',
+  }) as Record<string, () => Promise<string>>;
   const loader = markdownLoaders[`../${doc.path}`];
 
   if (!loader) {
@@ -894,41 +930,77 @@ function renderNav(): void {
   }
 
   searchRenderRequest += 1;
-  const groups = new Map<string, Doc[]>();
+  const activePath = findNavNodePath(state.lang, state.activeId);
+  const activeAncestorKeys = new Set(activePath.slice(0, -1).map(getNavNodeKey));
+  const sections = navTree[state.lang] || [];
 
-  for (const doc of getDocsByLang(state.lang)) {
-    const group = groups.get(doc.meta.section) || [];
-    group.push(doc);
-    groups.set(doc.meta.section, group);
-  }
-
-  nav.innerHTML = Array.from(groups.entries())
-    .map(([section, sectionDocs]) => {
-      const links = sectionDocs
-        .map((doc) => {
-          const active = doc.id === state.activeId ? ' aria-current="page"' : '';
-
-          return `
-            <a class="doc-link" href="${getDocUrl(doc.lang, doc.id)}"${active}>
-              <span>${escapeHtml(doc.title)}</span>
-              <small>${escapeHtml(doc.meta.summary || doc.path)}</small>
-            </a>
-          `;
-        })
-        .join('');
-
-      return `
+  nav.innerHTML = sections
+    .map(
+      (section) => `
         <section class="nav-section">
-          <h2>${escapeHtml(section)}</h2>
-          ${links}
+          <h2>${escapeHtml(section.title)}</h2>
+          ${renderNavNodes(section.children, activeAncestorKeys)}
         </section>
-      `;
-    })
+      `,
+    )
     .join('');
 
   if (!getDocsByLang(state.lang).length) {
     nav.innerHTML = `<p class="empty">${getLabel(state.lang, 'doc.empty')}</p>`;
   }
+}
+
+function renderNavNodes(nodes: NavNode[], activeAncestorKeys: Set<string>): string {
+  if (!nodes.length) {
+    return '';
+  }
+
+  return `
+    <ul class="nav-list">
+      ${nodes.map((node) => renderNavNode(node, activeAncestorKeys)).join('')}
+    </ul>
+  `;
+}
+
+function renderNavNode(node: NavNode, activeAncestorKeys: Set<string>): string {
+  const key = getNavNodeKey(node);
+  const hasChildren = node.children.length > 0;
+  const expanded = hasChildren && (activeAncestorKeys.has(key) || state.navExpandedIds.has(key));
+  const active = node.id === state.activeId ? ' aria-current="page"' : '';
+  const toggle = hasChildren
+    ? `
+      <button
+        class="nav-item-toggle"
+        type="button"
+        data-nav-id="${escapeHtml(key)}"
+        aria-label="${escapeHtml(node.title)}"
+        aria-expanded="${expanded}"
+      ></button>
+    `
+    : '<span class="nav-item-spacer" aria-hidden="true"></span>';
+  const label = node.id
+    ? `
+      <a class="doc-link" href="${getDocUrl(state.lang, node.id)}"${active}>
+        <span>${escapeHtml(node.title)}</span>
+        <small>${escapeHtml(getDocByKey(state.lang, node.id)?.meta.summary || node.path || '')}</small>
+      </a>
+    `
+    : `<span class="nav-folder-label">${escapeHtml(node.title)}</span>`;
+  const children = hasChildren ? renderNavNodes(node.children, activeAncestorKeys) : '';
+
+  return `
+    <li class="nav-item" data-depth="${node.depth}" data-expanded="${expanded}">
+      <div class="nav-item-row">
+        ${toggle}
+        ${label}
+      </div>
+      ${children}
+    </li>
+  `;
+}
+
+function getNavNodeKey(node: NavNode): string {
+  return node.id || `${node.depth}:${node.order}:${node.title}`;
 }
 
 async function renderSearchResults(nav: HTMLElement, query: string): Promise<void> {
@@ -1176,14 +1248,6 @@ function setTocWidth(width: number): void {
   localStorage.setItem('xrDocsTocWidth', String(state.tocWidth));
 }
 
-function getDocsByLang(lang: Lang): Doc[] {
-  return docs.filter((doc) => doc.lang === lang);
-}
-
-function getDocByKey(lang: Lang, id: string): Doc | undefined {
-  return docs.find((doc) => doc.lang === lang && doc.id === id);
-}
-
 function getActiveDoc(): Doc | undefined {
   const langDocs = getDocsByLang(state.lang);
   return langDocs.find((doc) => doc.id === state.activeId) || langDocs[0] || docs[0];
@@ -1254,7 +1318,19 @@ function readRouteFromPath(pathname: string): Route | undefined {
   if (maybeLang === 'ru' || maybeLang === 'en') {
     return {
       lang: maybeLang,
-      id: rest.join('/'),
+      id: rest.join('/').replace(/\.md$/i, ''),
+    };
+  }
+
+  const langIndex = path.split('/').findIndex((part) => part === 'ru' || part === 'en');
+
+  if (langIndex >= 0) {
+    const parts = path.split('/').slice(langIndex);
+    const [lang, ...idParts] = parts;
+
+    return {
+      lang: lang as Lang,
+      id: idParts.join('/').replace(/\.md$/i, ''),
     };
   }
 

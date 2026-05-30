@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import MarkdownIt from 'markdown-it';
+import { readContentModel } from './content-model.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(rootDir, 'docs');
@@ -74,8 +76,7 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
 };
 
 const template = fs.readFileSync(templatePath, 'utf8');
-const navConfig = createNavConfig();
-const docs = readDocs().sort(compareDocs);
+const { docs, nav } = readContentModel(docsDir);
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
 const pages = docs.map((doc) => ({
   doc,
@@ -97,147 +98,6 @@ writeSitemap(pages);
 writeRobots();
 
 console.log(`Prerendered ${pages.length} documentation pages.`);
-
-function readDocs() {
-  return listMarkdownFiles(docsDir)
-    .filter((file) => path.basename(file).toLowerCase() !== 'init.md')
-    .map((file) => {
-      const raw = fs.readFileSync(file, 'utf8');
-      const updatedAt = fs.statSync(file).mtime;
-      const relative = slash(path.relative(docsDir, file));
-      const [lang, ...parts] = relative.split('/');
-      const id = parts.join('/').replace(/\.md$/i, '');
-      const { meta, content } = parseFrontmatter(raw);
-      const navEntry = navConfig[lang]?.get(id);
-
-      return {
-        id,
-        lang,
-        path: `docs/${relative}`,
-        title: extractTitle(content) || 'Untitled',
-        content,
-        updatedAt,
-        meta: {
-          section: navEntry?.section || meta.section || 'Documents',
-          order: navEntry?.order ?? Number(meta.order || 999),
-          summary: meta.summary || '',
-        },
-      };
-    })
-    .filter((doc) => doc.lang === 'ru' || doc.lang === 'en');
-}
-
-function listMarkdownFiles(dir) {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const fullPath = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) {
-      return listMarkdownFiles(fullPath);
-    }
-
-    return entry.isFile() && entry.name.endsWith('.md') ? [fullPath] : [];
-  });
-}
-
-function createNavConfig() {
-  return {
-    ru: parseInit('ru'),
-    en: parseInit('en'),
-  };
-}
-
-function parseInit(lang) {
-  const entries = new Map();
-  const initPath = path.join(docsDir, lang, 'init.md');
-
-  if (!fs.existsSync(initPath)) {
-    return entries;
-  }
-
-  let order = 0;
-  let section;
-
-  for (const rawLine of fs.readFileSync(initPath, 'utf8').split('\n')) {
-    const line = rawLine.trim();
-    const heading = line.match(/^#{1,6}\s+(.+)$/);
-    const link = line.match(/^\s*[-*]\s+\[([^\]]+)\]\(([^)]+\.md)\)/);
-
-    if (heading) {
-      section = heading[1].trim();
-      continue;
-    }
-
-    if (!link) {
-      continue;
-    }
-
-    const id = normalizeDocId(link[2], lang);
-
-    if (id && id !== 'init') {
-      entries.set(id, { order, section });
-      order += 1;
-    }
-  }
-
-  return entries;
-}
-
-function parseFrontmatter(raw) {
-  if (!raw.startsWith('---')) {
-    return { meta: {}, content: raw };
-  }
-
-  const end = raw.indexOf('\n---', 3);
-
-  if (end === -1) {
-    return { meta: {}, content: raw };
-  }
-
-  const meta = {};
-  const block = raw.slice(3, end).trim();
-
-  for (const line of block.split('\n')) {
-    const separator = line.indexOf(':');
-
-    if (separator === -1) {
-      continue;
-    }
-
-    meta[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-  }
-
-  return {
-    meta,
-    content: raw.slice(end + 4).replace(/^\s+/, ''),
-  };
-}
-
-function compareDocs(a, b) {
-  if (a.lang !== b.lang) {
-    return a.lang.localeCompare(b.lang);
-  }
-
-  const aNav = navConfig[a.lang].get(a.id);
-  const bNav = navConfig[b.lang].get(b.id);
-
-  if (aNav || bNav) {
-    return (aNav?.order ?? 9999) - (bNav?.order ?? 9999);
-  }
-
-  if (a.meta.section !== b.meta.section) {
-    return a.meta.section.localeCompare(b.meta.section, a.lang);
-  }
-
-  if (a.meta.order !== b.meta.order) {
-    return a.meta.order - b.meta.order;
-  }
-
-  return a.title.localeCompare(b.title, a.lang);
-}
 
 function writePage(doc, canonicalPath, outputPath) {
   const title = `${doc.title} | ${siteName}`;
@@ -324,32 +184,85 @@ function renderStaticBody(activeDoc) {
 }
 
 function renderStaticNav(activeDoc) {
-  const groups = new Map();
+  const activePath = findNavNodePath(activeDoc.lang, activeDoc.id);
+  const activeAncestorKeys = new Set(activePath.slice(0, -1).map(getNavNodeKey));
 
-  for (const doc of docs.filter((item) => item.lang === activeDoc.lang)) {
-    const group = groups.get(doc.meta.section) || [];
-    group.push(doc);
-    groups.set(doc.meta.section, group);
+  return (nav[activeDoc.lang] || [])
+    .map(
+      (section) =>
+        `<section class="nav-section"><h2>${escapeHtml(section.title)}</h2>${renderStaticNavNodes(section.children, activeDoc, activeAncestorKeys)}</section>`,
+    )
+    .join('');
+}
+
+function renderStaticNavNodes(nodes, activeDoc, activeAncestorKeys) {
+  if (!nodes.length) {
+    return '';
   }
 
-  return Array.from(groups.entries())
-    .map(([section, sectionDocs]) => {
-      const links = sectionDocs
-        .map((doc) => {
-          const active = doc.id === activeDoc.id ? ' aria-current="page"' : '';
+  return `<ul class="nav-list">${nodes.map((node) => renderStaticNavNode(node, activeDoc, activeAncestorKeys)).join('')}</ul>`;
+}
 
-          return `
-            <a class="doc-link" href="${getDocPath(doc.lang, doc.id)}"${active}>
-              <span>${escapeHtml(doc.title)}</span>
-              <small>${escapeHtml(doc.meta.summary || doc.path)}</small>
-            </a>
-          `;
-        })
-        .join('');
+function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
+  const key = getNavNodeKey(node);
+  const hasChildren = node.children.length > 0;
+  const expanded = hasChildren && activeAncestorKeys.has(key);
+  const active = node.id === activeDoc.id ? ' aria-current="page"' : '';
+  const doc = node.id ? docs.find((item) => item.lang === activeDoc.lang && item.id === node.id) : undefined;
+  const toggle = hasChildren
+    ? `<button class="nav-item-toggle" type="button" data-nav-id="${escapeHtml(key)}" aria-label="${escapeHtml(node.title)}" aria-expanded="${expanded}"></button>`
+    : '<span class="nav-item-spacer" aria-hidden="true"></span>';
+  const label = node.id
+    ? `
+      <a class="doc-link" href="${getDocPath(activeDoc.lang, node.id)}"${active}>
+        <span>${escapeHtml(node.title)}</span>
+        <small>${escapeHtml(doc?.meta.summary || node.path || '')}</small>
+      </a>
+    `
+    : `<span class="nav-folder-label">${escapeHtml(node.title)}</span>`;
+  const children = hasChildren ? renderStaticNavNodes(node.children, activeDoc, activeAncestorKeys) : '';
 
-      return `<section class="nav-section"><h2>${escapeHtml(section)}</h2>${links}</section>`;
-    })
-    .join('');
+  return `
+    <li class="nav-item" data-depth="${node.depth}" data-expanded="${expanded}">
+      <div class="nav-item-row">
+        ${toggle}
+        ${label}
+      </div>
+      ${children}
+    </li>
+  `;
+}
+
+function findNavNodePath(lang, id) {
+  for (const section of nav[lang] || []) {
+    const found = findNodePath(section.children, id);
+
+    if (found.length) {
+      return found;
+    }
+  }
+
+  return [];
+}
+
+function findNodePath(nodes, id) {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return [node];
+    }
+
+    const childPath = findNodePath(node.children, id);
+
+    if (childPath.length) {
+      return [node, ...childPath];
+    }
+  }
+
+  return [];
+}
+
+function getNavNodeKey(node) {
+  return node.id || `${node.depth}:${node.order}:${node.title}`;
 }
 
 function writeSitemap(pages) {
@@ -390,11 +303,37 @@ function getXDefaultUrl(doc, canonicalPath) {
 }
 
 function getLatestUpdatedAt(items) {
-  return items.reduce((latest, item) => (item.updatedAt > latest ? item.updatedAt : latest), new Date(0));
+  return items.reduce((latest, item) => {
+    const updatedAt = getDocUpdatedAt(item);
+    return updatedAt > latest ? updatedAt : latest;
+  }, new Date(0));
 }
 
 function getPageUpdatedAt(page) {
-  return page.updatedAt || page.doc?.updatedAt || new Date(0);
+  if (page.doc) {
+    return getDocUpdatedAt(page.doc);
+  }
+
+  return page.updatedAt || new Date(0);
+}
+
+function getDocUpdatedAt(doc) {
+  const gitUpdatedAt = getGitUpdatedAt(doc.path);
+
+  return gitUpdatedAt || doc.updatedAt || new Date(0);
+}
+
+function getGitUpdatedAt(relativePath) {
+  try {
+    const output = execFileSync('git', ['-C', rootDir, 'log', '-1', '--format=%cI', '--', relativePath], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+
+    return output ? new Date(output) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function formatSitemapDate(value) {
@@ -571,21 +510,6 @@ function normalizeSiteUrl(value) {
   return `${value.replace(/\/+$/g, '')}/`;
 }
 
-function normalizeDocId(filePath, lang) {
-  return filePath
-    .split('#')[0]
-    .replace(/^\.\//, '')
-    .replace(/^docs\//, '')
-    .replace(new RegExp(`^${lang}/`), '')
-    .replace(/^(ru|en)\//, '')
-    .replace(/\.md$/i, '');
-}
-
-function extractTitle(content) {
-  const heading = content.match(/^#\s+(.+)$/m);
-  return heading ? heading[1].trim() : '';
-}
-
 function parseAdmonishInfo(info) {
   const match = info.trim().match(/^admonish\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?$/i);
 
@@ -603,10 +527,6 @@ function parseAdmonishInfo(info) {
 
 function getDefaultCalloutTitle(kind) {
   return kind === 'warning' ? 'Важно' : kind;
-}
-
-function slash(value) {
-  return value.replace(/\\/g, '/');
 }
 
 function escapeHtml(value) {
