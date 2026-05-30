@@ -18,6 +18,7 @@ const md = new MarkdownIt({
   langPrefix: 'language-',
 });
 const defaultImageRule = md.renderer.rules.image;
+const defaultFenceRule = md.renderer.rules.fence;
 
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
@@ -49,6 +50,27 @@ const siteMeta = {
     description: 'S.T.A.L.K.E.R. modding documentation for xrMPE.',
     locale: 'en_US',
   },
+};
+
+md.renderer.rules.fence = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  const callout = parseAdmonishInfo(token.info);
+
+  if (!callout) {
+    return defaultFenceRule
+      ? defaultFenceRule(tokens, index, options, env, self)
+      : self.renderToken(tokens, index, options);
+  }
+
+  const title = callout.title || getDefaultCalloutTitle(callout.kind);
+  const body = md.render(token.content, env);
+
+  return [
+    `<aside class="doc-callout doc-callout-${escapeHtml(callout.kind)}" role="note">`,
+    `<p class="doc-callout-title">${escapeHtml(title)}</p>`,
+    `<div class="doc-callout-body">${body}</div>`,
+    '</aside>',
+  ].join('');
 };
 
 const template = fs.readFileSync(templatePath, 'utf8');
@@ -562,6 +584,25 @@ function normalizeDocId(filePath, lang) {
 function extractTitle(content) {
   const heading = content.match(/^#\s+(.+)$/m);
   return heading ? heading[1].trim() : '';
+}
+
+function parseAdmonishInfo(info) {
+  const match = info.trim().match(/^admonish\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?$/i);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const title = match[2]?.match(/\btitle=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i);
+
+  return {
+    kind: match[1].toLowerCase(),
+    title: title?.[1] || title?.[2] || title?.[3],
+  };
+}
+
+function getDefaultCalloutTitle(kind) {
+  return kind === 'warning' ? 'Важно' : kind;
 }
 
 function slash(value) {

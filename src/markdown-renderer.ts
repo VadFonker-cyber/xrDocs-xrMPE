@@ -58,6 +58,7 @@ hljs.registerLanguage('xml', xml);
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 
 const defaultImageRule = md.renderer.rules.image;
+const defaultFenceRule = md.renderer.rules.fence;
 
 (['th_open', 'td_open'] as const).forEach((ruleName) => {
   const defaultRule = md.renderer.rules[ruleName];
@@ -96,6 +97,27 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
   return defaultImageRule
     ? defaultImageRule(tokens, index, options, env, self)
     : self.renderToken(tokens, index, options);
+};
+
+md.renderer.rules.fence = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  const callout = parseAdmonishInfo(token.info);
+
+  if (!callout) {
+    return defaultFenceRule
+      ? defaultFenceRule(tokens, index, options, env, self)
+      : self.renderToken(tokens, index, options);
+  }
+
+  const title = callout.title || getDefaultCalloutTitle(callout.kind);
+  const body = md.render(token.content, env);
+
+  return [
+    `<aside class="doc-callout doc-callout-${escapeHtml(callout.kind)}" role="note">`,
+    `<p class="doc-callout-title">${escapeHtml(title)}</p>`,
+    `<div class="doc-callout-body">${body}</div>`,
+    '</aside>',
+  ].join('');
 };
 
 export function renderDocContent(content: string, lang: Lang, options: RenderOptions): RenderedDoc {
@@ -280,6 +302,25 @@ function highlightCode(source: string, language: string): string {
   }
 
   return escapeHtml(source);
+}
+
+function parseAdmonishInfo(info: string): { kind: string; title?: string } | undefined {
+  const match = info.trim().match(/^admonish\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?$/i);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const title = match[2]?.match(/\btitle=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i);
+
+  return {
+    kind: match[1].toLowerCase(),
+    title: title?.[1] || title?.[2] || title?.[3],
+  };
+}
+
+function getDefaultCalloutTitle(kind: string): string {
+  return kind === 'warning' ? 'Важно' : kind;
 }
 
 function rewriteDocLinks(html: string, currentLang: Lang): string {

@@ -832,6 +832,34 @@ h1 {
   padding: 12px 16px;
 }
 
+.doc-callout {
+  margin: 24px 0;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 14px 16px;
+}
+
+.doc-callout-warning {
+  border-left-color: #d8b45c;
+  background: color-mix(in srgb, #d8b45c 12%, var(--surface-soft));
+}
+
+.doc-callout-title {
+  margin: 0 0 8px;
+  color: var(--heading);
+  font-weight: 700;
+}
+
+.doc-callout-body > :first-child {
+  margin-top: 0;
+}
+
+.doc-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
 .empty {
   color: var(--muted);
 }

@@ -208,6 +208,7 @@ function extractTitle(content) {
 function stripMarkdown(value) {
   return value
     .replace(/^---[\s\S]*?\n---/, ' ')
+    .replace(/```admonish[^\n]*\n([\s\S]*?)```/gi, '$1')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
