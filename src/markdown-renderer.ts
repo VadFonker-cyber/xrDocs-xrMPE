@@ -106,9 +106,7 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const callout = parseAdmonishInfo(token.info);
 
   if (!callout) {
-    return defaultFenceRule
-      ? defaultFenceRule(tokens, index, options, env, self)
-      : self.renderToken(tokens, index, options);
+    return renderFenceCode(token);
   }
 
   const title = callout.title || getDefaultCalloutTitle(callout.kind);
@@ -121,6 +119,14 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
     '</aside>',
   ].join('');
 };
+
+function renderFenceCode(token: Token): string {
+  const language = token.info.trim().split(/\s+/)[0]?.toLowerCase() || '';
+  const className = language ? ` class="${escapeHtml(md.options.langPrefix + language)}"` : '';
+  const content = highlightCode(token.content, language);
+
+  return `<pre><code${className}>${content}</code></pre>\n`;
+}
 
 export function renderDocContent(content: string, lang: Lang, options: RenderOptions): RenderedDoc {
   activeBasePath = options.basePath;

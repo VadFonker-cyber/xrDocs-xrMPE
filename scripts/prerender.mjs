@@ -3,6 +3,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import MarkdownIt from 'markdown-it';
+import hljs from 'highlight.js/lib/core';
+import bash from 'highlight.js/lib/languages/bash';
+import dos from 'highlight.js/lib/languages/dos';
+import ini from 'highlight.js/lib/languages/ini';
+import json from 'highlight.js/lib/languages/json';
+import markdown from 'highlight.js/lib/languages/markdown';
+import plaintext from 'highlight.js/lib/languages/plaintext';
+import powershell from 'highlight.js/lib/languages/powershell';
+import xml from 'highlight.js/lib/languages/xml';
 import { readContentModel } from './content-model.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,9 +27,26 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: true,
   langPrefix: 'language-',
+  highlight: highlightCode,
 });
 const defaultImageRule = md.renderer.rules.image;
 const defaultFenceRule = md.renderer.rules.fence;
+
+hljs.registerLanguage('ini', ini);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('bat', dos);
+hljs.registerLanguage('batch', dos);
+hljs.registerLanguage('cmd', dos);
+hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('powershell', powershell);
+hljs.registerLanguage('ps1', powershell);
+hljs.registerLanguage('pwsh', powershell);
+hljs.registerLanguage('sh', bash);
+hljs.registerLanguage('text', plaintext);
+hljs.registerLanguage('plaintext', plaintext);
+hljs.registerLanguage('xml', xml);
 
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
@@ -59,9 +85,7 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const callout = parseAdmonishInfo(token.info);
 
   if (!callout) {
-    return defaultFenceRule
-      ? defaultFenceRule(tokens, index, options, env, self)
-      : self.renderToken(tokens, index, options);
+    return renderFenceCode(token);
   }
 
   const title = callout.title || getDefaultCalloutTitle(callout.kind);
@@ -74,6 +98,14 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
     '</aside>',
   ].join('');
 };
+
+function renderFenceCode(token) {
+  const language = token.info.trim().split(/\s+/)[0]?.toLowerCase() || '';
+  const className = language ? ` class="${escapeHtml(md.options.langPrefix + language)}"` : '';
+  const content = highlightCode(token.content, language);
+
+  return `<pre><code${className}>${content}</code></pre>\n`;
+}
 
 const template = fs.readFileSync(templatePath, 'utf8');
 const { docs, nav } = readContentModel(docsDir);
@@ -373,6 +405,20 @@ function slugifyHeading(value, lang) {
     .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
     .replace(/^-+|-+$/g, '')
     .replace(/-{2,}/g, '-');
+}
+
+function highlightCode(source, language) {
+  const lang = language.trim().toLowerCase();
+
+  try {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(source, { language: lang, ignoreIllegals: true }).value;
+    }
+  } catch {
+    return escapeHtml(source);
+  }
+
+  return escapeHtml(source);
 }
 
 function rewriteDocLinks(html, currentLang) {
