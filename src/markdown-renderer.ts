@@ -5,6 +5,7 @@ import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
 import dos from 'highlight.js/lib/languages/dos';
 import ini from 'highlight.js/lib/languages/ini';
+import json from 'highlight.js/lib/languages/json';
 import markdown from 'highlight.js/lib/languages/markdown';
 import plaintext from 'highlight.js/lib/languages/plaintext';
 import powershell from 'highlight.js/lib/languages/powershell';
@@ -41,6 +42,7 @@ const md = new MarkdownIt({
 });
 
 hljs.registerLanguage('ini', ini);
+hljs.registerLanguage('json', json);
 hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('bat', dos);
 hljs.registerLanguage('batch', dos);
