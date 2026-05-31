@@ -12,7 +12,9 @@
 - Текстуры
   - [Правильная работа с атласами иконок](texturing/working-correctly-with-icon-atlases.md)
 
+- Конфиги
+  - [Настройка программ, подобных VSCode, для работы с игровыми файлами](configs/vscode-base.md)
+
 # Примеры
 
 - [Пример оформления страницы](content-elements.md)
-
