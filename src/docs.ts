@@ -2,18 +2,13 @@ import docsManifest from './generated/docs-manifest.json';
 
 export type Lang = 'ru' | 'en';
 
-export type DocMeta = {
-  section: string;
-  order: number;
-  summary: string;
-};
-
 export type Doc = {
   id: string;
   lang: Lang;
   path: string;
   title: string;
-  meta: DocMeta;
+  section: string;
+  order: number;
 };
 
 export type NavNode = {
@@ -45,12 +40,12 @@ export function compareDocs(a: Doc, b: Doc): number {
     return a.lang.localeCompare(b.lang);
   }
 
-  if (a.meta.order !== b.meta.order) {
-    return a.meta.order - b.meta.order;
+  if (a.order !== b.order) {
+    return a.order - b.order;
   }
 
-  if (a.meta.section !== b.meta.section) {
-    return a.meta.section.localeCompare(b.meta.section, a.lang);
+  if (a.section !== b.section) {
+    return a.section.localeCompare(b.section, a.lang);
   }
 
   return a.title.localeCompare(b.title, a.lang);

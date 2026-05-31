@@ -101,7 +101,7 @@ console.log(`Prerendered ${pages.length} documentation pages.`);
 
 function writePage(doc, canonicalPath, outputPath) {
   const title = `${doc.title} | ${siteName}`;
-  const description = [doc.meta.summary, siteMeta[doc.lang].description].filter(Boolean).join(' ');
+  const description = siteMeta[doc.lang].description;
   const canonicalUrl = toAbsoluteUrl(canonicalPath);
   const body = renderStaticBody(doc);
   let html = template
@@ -208,7 +208,6 @@ function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
   const hasChildren = node.children.length > 0;
   const expanded = hasChildren && activeAncestorKeys.has(key);
   const active = node.id === activeDoc.id ? ' aria-current="page"' : '';
-  const doc = node.id ? docs.find((item) => item.lang === activeDoc.lang && item.id === node.id) : undefined;
   const toggle = hasChildren
     ? `<button class="nav-item-toggle" type="button" data-nav-id="${escapeHtml(key)}" aria-label="${escapeHtml(node.title)}" aria-expanded="${expanded}"></button>`
     : '<span class="nav-item-spacer" aria-hidden="true"></span>';
@@ -216,7 +215,6 @@ function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
     ? `
       <a class="doc-link" href="${getDocPath(activeDoc.lang, node.id)}"${active}>
         <span>${escapeHtml(node.title)}</span>
-        <small>${escapeHtml(doc?.meta.summary || node.path || '')}</small>
       </a>
     `
     : `<span class="nav-folder-label">${escapeHtml(node.title)}</span>`;

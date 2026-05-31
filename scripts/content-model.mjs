@@ -17,47 +17,17 @@ export function readContentModel(docsDir) {
   return { docs, nav, navEntries };
 }
 
-export function parseFrontmatter(raw) {
-  if (!raw.startsWith('---')) {
-    return { meta: {}, content: raw };
-  }
-
-  const end = raw.indexOf('\n---', 3);
-
-  if (end === -1) {
-    return { meta: {}, content: raw };
-  }
-
-  const meta = {};
-  const block = raw.slice(3, end).trim();
-
-  for (const line of block.split('\n')) {
-    const separator = line.indexOf(':');
-
-    if (separator === -1) {
-      continue;
-    }
-
-    meta[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-  }
-
-  return {
-    meta,
-    content: raw.slice(end + 4).replace(/^\s+/, ''),
-  };
-}
-
 export function compareDocs(a, b) {
   if (a.lang !== b.lang) {
     return a.lang.localeCompare(b.lang);
   }
 
-  if (a.meta.order !== b.meta.order) {
-    return a.meta.order - b.meta.order;
+  if (a.order !== b.order) {
+    return a.order - b.order;
   }
 
-  if (a.meta.section !== b.meta.section) {
-    return a.meta.section.localeCompare(b.meta.section, a.lang);
+  if (a.section !== b.section) {
+    return a.section.localeCompare(b.section, a.lang);
   }
 
   return a.title.localeCompare(b.title, a.lang);
@@ -192,20 +162,16 @@ function createDocsFromNav(docsDir, lang, entries) {
       const raw = fs.readFileSync(file, 'utf8');
       const updatedAt = fs.statSync(file).mtime;
       const relative = slash(path.relative(docsDir, file));
-      const { meta, content } = parseFrontmatter(raw);
 
       return {
         id: entry.id,
         lang,
         path: `docs/${relative}`,
-        title: extractTitle(content) || entry.title || 'Untitled',
-        content,
+        title: extractTitle(raw) || entry.title || 'Untitled',
+        content: raw,
         updatedAt,
-        meta: {
-          section: entry.section || meta.section || 'Documents',
-          order: entry.order,
-          summary: meta.summary || '',
-        },
+        section: entry.section || 'Documents',
+        order: entry.order,
       };
     });
 }

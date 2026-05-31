@@ -13,9 +13,7 @@ const siteMeta: Record<Lang, { description: string; locale: string }> = {
 
 export function updateDocumentMeta(doc: Doc): void {
   const title = `${doc.title} | xrDocs`;
-  const description = [doc.meta.summary, siteMeta[doc.lang].description]
-    .filter(Boolean)
-    .join(' ');
+  const description = siteMeta[doc.lang].description;
 
   setMetaContent('name', 'description', description);
   setMetaContent('property', 'og:title', title);

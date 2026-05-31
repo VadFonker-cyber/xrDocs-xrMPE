@@ -1,5 +1,5 @@
 import type { AppContext } from './app-context';
-import { findNavNodePath, getDocByKey, getDocsByLang, navTree, type NavNode } from './docs';
+import { findNavNodePath, getDocsByLang, navTree, type NavNode } from './docs';
 import { getDocUrl } from './routing';
 import { renderSearchResults } from './search';
 import { escapeHtml, getLabel } from './utils/html';
@@ -78,7 +78,6 @@ function renderNavNode(context: AppContext, node: NavNode, activeAncestorKeys: S
     ? `
       <a class="doc-link" href="${getDocUrl(context.state.lang, node.id)}"${active}>
         <span>${escapeHtml(node.title)}</span>
-        <small>${escapeHtml(getDocByKey(context.state.lang, node.id)?.meta.summary || node.path || '')}</small>
       </a>
     `
     : `<span class="nav-folder-label">${escapeHtml(node.title)}</span>`;

@@ -17,8 +17,7 @@ export function generateContentData(options = {}) {
     lang: doc.lang,
     path: doc.path,
     title: doc.title,
-    section: doc.meta.section,
-    summary: doc.meta.summary,
+    section: doc.section,
     text: stripMarkdown(doc.content),
   }));
   const themeAssets = listPublicFiles(publicDir)
@@ -60,7 +59,6 @@ function listPublicFiles(dir) {
 
 function stripMarkdown(value) {
   return value
-    .replace(/^---[\s\S]*?\n---/, ' ')
     .replace(/```admonish[^\n]*\n([\s\S]*?)```/gi, '$1')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')

@@ -1,9 +1,3 @@
----
-section: Configs
-order: 1
-summary: A practical approach to editing gameplay parameters.
----
-
 # LTX Configs
 
 LTX files describe many gameplay entities: weapons, items, NPC sections, weather, and economy. For modding, the important part is keeping changes readable.

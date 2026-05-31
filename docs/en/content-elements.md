@@ -1,9 +1,3 @@
----
-section: Examples
-order: 20
-summary: Example page with local images, tables, a gallery, and code blocks.
----
-
 # Content Elements Example
 
 This page shows the content elements supported by the documentation: local images, a compact information table, regular tables, a gallery, and code blocks.

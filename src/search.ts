@@ -16,7 +16,6 @@ type SearchIndexEntry = {
   path: string;
   title: string;
   section: string;
-  summary: string;
   text: string;
   searchText?: string;
 };
@@ -84,7 +83,7 @@ export async function renderSearchResults(
           return `
             <a class="doc-link search-result" href="${getDocUrl(doc.lang, doc.id)}"${active}>
               <span>${highlight(doc.title, query, context.state.lang)}</span>
-              <small>${escapeHtml(doc.meta.section)} &middot; ${escapeHtml(doc.path)}</small>
+              <small>${escapeHtml(doc.section)} &middot; ${escapeHtml(doc.path)}</small>
               <p>${highlight(excerpt, query, context.state.lang)}</p>
             </a>
           `;
@@ -117,7 +116,6 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
 
       const title = normalizeSearch(entry.title, lang);
       const section = normalizeSearch(entry.section, lang);
-      const summary = normalizeSearch(entry.summary, lang);
       const content = getSearchEntryText(entry);
       let score = 0;
 
@@ -128,10 +126,6 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
 
         if (section.includes(term)) {
           score += 35;
-        }
-
-        if (summary.includes(term)) {
-          score += 25;
         }
 
         if (content.includes(term)) {
@@ -151,7 +145,7 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
 }
 
 function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {
-  const text = [entry.summary, entry.text].filter(Boolean).join(' ');
+  const text = entry.text;
   const normalized = normalizeSearch(text, entry.lang);
   const firstMatch = terms
     .map((term) => normalized.indexOf(term))

@@ -1,9 +1,3 @@
----
-section: Texturing
-order: 10
-summary: How to prepare, edit, and save inventory icon atlases without common mistakes.
----
-
 # Working Correctly With Icon Atlases
 
 This page is based on Hrust's guide to preparing and saving icon atlases for S.T.A.L.K.E.R. The original topic was published on [AP-PRO](https://ap-pro.ru/forums/topic/4205-pravilnaya-rabota-s-atlasami-ikonok/).

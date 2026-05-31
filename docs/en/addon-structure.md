@@ -1,9 +1,3 @@
----
-section: Basics
-order: 2
-summary: Basic folder layout for a modification.
----
-
 # Addon Structure
 
 A typical addon stores modified resources in `gamedata`. Keep the structure close to the original game layout: it makes files easier to compare, disable, and debug.
