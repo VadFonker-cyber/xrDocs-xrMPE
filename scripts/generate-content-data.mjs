@@ -4,34 +4,43 @@ import { fileURLToPath } from 'node:url';
 import { readContentModel } from './content-model.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const docsDir = path.join(rootDir, 'docs');
-const publicDir = path.join(rootDir, 'public');
-const generatedDir = path.join(rootDir, 'src', 'generated');
 
-const { docs, nav } = readContentModel(docsDir);
-const searchIndex = docs.map((doc) => ({
-  id: doc.id,
-  lang: doc.lang,
-  path: doc.path,
-  title: doc.title,
-  section: doc.meta.section,
-  summary: doc.meta.summary,
-  text: stripMarkdown(doc.content),
-}));
-const themeAssets = listPublicFiles(publicDir)
-  .map((file) => slash(path.relative(publicDir, file)))
-  .filter((file) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file))
-  .sort((a, b) => a.localeCompare(b));
+export function generateContentData(options = {}) {
+  const projectRoot = options.rootDir ? path.resolve(options.rootDir) : rootDir;
+  const docsDir = path.join(projectRoot, 'docs');
+  const publicDir = path.join(projectRoot, 'public');
+  const generatedDir = path.join(projectRoot, 'src', 'generated');
 
-fs.mkdirSync(generatedDir, { recursive: true });
-fs.writeFileSync(
-  path.join(generatedDir, 'docs-manifest.json'),
-  `${JSON.stringify({ docs: docs.map(({ content, updatedAt, ...doc }) => doc), nav }, null, 2)}\n`,
-);
-fs.writeFileSync(path.join(generatedDir, 'theme-assets.json'), `${JSON.stringify(themeAssets, null, 2)}\n`);
-fs.writeFileSync(path.join(publicDir, 'search-index.json'), `${JSON.stringify({ docs: searchIndex })}\n`);
+  const { docs, nav } = readContentModel(docsDir);
+  const searchIndex = docs.map((doc) => ({
+    id: doc.id,
+    lang: doc.lang,
+    path: doc.path,
+    title: doc.title,
+    section: doc.meta.section,
+    summary: doc.meta.summary,
+    text: stripMarkdown(doc.content),
+  }));
+  const themeAssets = listPublicFiles(publicDir)
+    .map((file) => slash(path.relative(publicDir, file)))
+    .filter((file) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file))
+    .sort((a, b) => a.localeCompare(b));
 
-console.log(`Generated metadata for ${docs.length} documentation pages.`);
+  fs.mkdirSync(generatedDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(generatedDir, 'docs-manifest.json'),
+    `${JSON.stringify({ docs: docs.map(({ content, updatedAt, ...doc }) => doc), nav }, null, 2)}\n`,
+  );
+  fs.writeFileSync(path.join(generatedDir, 'theme-assets.json'), `${JSON.stringify(themeAssets, null, 2)}\n`);
+  fs.writeFileSync(path.join(publicDir, 'search-index.json'), `${JSON.stringify({ docs: searchIndex })}\n`);
+
+  return { docs: docs.length };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = generateContentData();
+  console.log(`Generated metadata for ${result.docs} documentation pages.`);
+}
 
 function listPublicFiles(dir) {
   if (!fs.existsSync(dir)) {
