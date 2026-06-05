@@ -11,6 +11,19 @@ import type { ThemePreference } from './state';
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 
+type ShellRefs = {
+  languageToggle: HTMLButtonElement | null;
+  navToggle: HTMLButtonElement | null;
+  themeToggle: HTMLButtonElement | null;
+  tocToggle: HTMLButtonElement | null;
+  navOverlay: HTMLButtonElement | null;
+  tocOverlay: HTMLButtonElement | null;
+  sidebar: HTMLElement | null;
+  tocResizeHandle: HTMLElement | null;
+};
+
+let shellRefs: ShellRefs | null = null;
+
 export function renderShell(context: AppContext): void {
   const copy = labels[context.state.lang];
   const activeDoc = context.getActiveDoc();
@@ -94,25 +107,36 @@ export function renderShell(context: AppContext): void {
   `;
 
   bindShellEvents(context);
+
+  shellRefs = {
+    languageToggle: document.querySelector('#languageToggle'),
+    navToggle: document.querySelector('#navToggle'),
+    themeToggle: document.querySelector('#themeToggle'),
+    tocToggle: document.querySelector('#tocToggle'),
+    navOverlay: document.querySelector('#navOverlay'),
+    tocOverlay: document.querySelector('#tocOverlay'),
+    sidebar: document.querySelector('.sidebar'),
+    tocResizeHandle: document.querySelector('#tocResizeHandle'),
+  };
 }
 
 export function updateShellLabels(context: AppContext): void {
-  document.querySelector<HTMLButtonElement>('#navOverlay')?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.closeNavigation'));
-  document.querySelector<HTMLButtonElement>('#tocOverlay')?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.closeContents'));
-  document.querySelector<HTMLElement>('.sidebar')?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.nav'));
-  document.querySelector<HTMLElement>('#tocResizeHandle')?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.resizeContents'));
-  document.querySelector<HTMLButtonElement>('#languageToggle')?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchLanguage'));
-  document.querySelector<HTMLButtonElement>('#themeToggle')?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchTheme'));
+  shellRefs?.navOverlay?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.closeNavigation'));
+  shellRefs?.tocOverlay?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.closeContents'));
+  shellRefs?.sidebar?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.nav'));
+  shellRefs?.tocResizeHandle?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.resizeContents'));
+  shellRefs?.languageToggle?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchLanguage'));
+  shellRefs?.themeToggle?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchTheme'));
 }
 
 export function renderTopbarControls(context: AppContext, activeDoc: Doc): void {
-  const languageToggle = document.querySelector<HTMLButtonElement>('#languageToggle');
+  const { languageToggle, navToggle, themeToggle, tocToggle } = shellRefs ?? {};
+
   if (languageToggle) {
     languageToggle.textContent = context.state.lang.toUpperCase();
     languageToggle.title = getLabel(context.state.lang, context.state.lang === 'ru' ? 'language.switchToEnglish' : 'language.switchToRussian');
   }
 
-  const navToggle = document.querySelector<HTMLButtonElement>('#navToggle');
   if (navToggle) {
     navToggle.setAttribute('aria-label', getLabel(context.state.lang, 'menu.label'));
     const label = navToggle.querySelector('span:last-child');
@@ -121,14 +145,12 @@ export function renderTopbarControls(context: AppContext, activeDoc: Doc): void 
     }
   }
 
-  const themeToggle = document.querySelector<HTMLButtonElement>('#themeToggle');
   if (themeToggle) {
     themeToggle.innerHTML = getThemeIcon(context.state.theme);
     themeToggle.title = getThemeToggleTitle(context, context.state.theme);
     themeToggle.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchTheme'));
   }
 
-  const tocToggle = document.querySelector<HTMLButtonElement>('#tocToggle');
   if (tocToggle) {
     const title = getTocTitle(activeDoc);
     tocToggle.setAttribute('aria-label', title);

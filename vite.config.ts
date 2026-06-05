@@ -76,6 +76,7 @@ function invalidateGeneratedModules(server: ViteDevServer) {
     path.resolve(server.config.root, 'src/generated/docs-manifest.json'),
     path.resolve(server.config.root, 'src/generated/theme-assets.json'),
     path.resolve(server.config.root, 'public/search-index.json'),
+    path.resolve(server.config.root, 'public/doc-content'),
   ];
 
   for (const file of generatedFiles) {

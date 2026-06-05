@@ -82,7 +82,7 @@ function render(): void {
   if (activeDoc.lang !== state.lang || activeDoc.id !== state.activeId) {
     state.lang = activeDoc.lang;
     state.activeId = activeDoc.id;
-    history.replaceState(null, '', getDocUrl(activeDoc.lang, activeDoc.id));
+    history.replaceState(null, '', getDocUrl(activeDoc.id));
   }
 
   localStorage.setItem('xrDocsLang', state.lang);
@@ -148,9 +148,13 @@ function switchLanguage(nextLang: Lang): void {
     return;
   }
 
+  const shouldUpdateUrl = nextDoc.id !== state.activeId;
   state.lang = nextLang;
   state.activeId = nextDoc.id;
-  history.pushState(null, '', getDocUrl(nextLang, nextDoc.id));
+
+  if (shouldUpdateUrl) {
+    history.pushState(null, '', getDocUrl(nextDoc.id));
+  }
   collectEvent('language_switch', {
     from: previousLang,
     to: nextLang,
@@ -165,10 +169,11 @@ function switchTheme(nextTheme: ThemePreference): void {
 
   state.theme = nextTheme;
   localStorage.setItem('xrDocsTheme', nextTheme);
-  document.documentElement.dataset.theme = getResolvedTheme(context);
+  const resolved = getResolvedTheme(context);
+  document.documentElement.dataset.theme = resolved;
   collectEvent('theme_switch', {
     theme: nextTheme,
-    resolved_theme: getResolvedTheme(context),
+    resolved_theme: resolved,
   });
   const activeDoc = getActiveDoc();
   if (activeDoc) {
@@ -204,7 +209,7 @@ function applyRoute(route: { lang: Lang; id: string }): void {
 }
 
 function collectCurrentPage(doc: Doc): void {
-  const path = getDocUrl(doc.lang, doc.id);
+  const path = getDocUrl(doc.id);
   const key = `${doc.lang}:${doc.id}:${doc.title}`;
 
   if (key === lastCollectedPage) {

@@ -2,14 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readContentModel } from './content-model.mjs';
+import { renderDocContent } from './render-doc.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 
 export function generateContentData(options = {}) {
   const projectRoot = options.rootDir ? path.resolve(options.rootDir) : rootDir;
   const docsDir = path.join(projectRoot, 'docs');
   const publicDir = path.join(projectRoot, 'public');
   const generatedDir = path.join(projectRoot, 'src', 'generated');
+  const docContentDir = path.join(publicDir, 'doc-content');
 
   const { docs, nav } = readContentModel(docsDir);
   const searchIndex = docs.map((doc) => ({
@@ -32,6 +35,16 @@ export function generateContentData(options = {}) {
   );
   fs.writeFileSync(path.join(generatedDir, 'theme-assets.json'), `${JSON.stringify(themeAssets, null, 2)}\n`);
   fs.writeFileSync(path.join(publicDir, 'search-index.json'), `${JSON.stringify({ docs: searchIndex })}\n`);
+  fs.rmSync(path.join(publicDir, 'doc-content.json'), { force: true });
+  fs.rmSync(docContentDir, { recursive: true, force: true });
+
+  for (const doc of docs) {
+    const outputPath = getRenderedDocOutputPath(docContentDir, doc);
+    const renderedDoc = renderDocContent(doc.content, doc.lang, { basePath });
+
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, `${JSON.stringify(renderedDoc)}\n`);
+  }
 
   return { docs: docs.length };
 }
@@ -71,4 +84,16 @@ function stripMarkdown(value) {
 
 function slash(value) {
   return value.replace(/\\/g, '/');
+}
+
+function getRenderedDocOutputPath(docContentDir, doc) {
+  return path.join(docContentDir, doc.lang, ...doc.id.split('/'), 'index.json');
+}
+
+function normalizeBasePath(value) {
+  if (!value || value === './') {
+    return '/';
+  }
+
+  return `/${value.replace(/^\/+|\/+$/g, '')}/`;
 }

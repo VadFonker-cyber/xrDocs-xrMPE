@@ -1,5 +1,5 @@
 import type { AppContext } from './app-context';
-import { findNavNodePath, getDocsByLang, navTree, type NavNode } from './docs';
+import { findNavNodePath, navTree, type NavNode } from './docs';
 import { getDocUrl } from './routing';
 import { renderSearchResults } from './search';
 import { escapeHtml, getLabel } from './utils/html';
@@ -26,6 +26,11 @@ export function renderNav(context: AppContext): void {
   const activeAncestorKeys = new Set(activePath.slice(0, -1).map(getNavNodeKey));
   const sections = navTree[context.state.lang] || [];
 
+  if (!sections.length) {
+    nav.innerHTML = `<p class="empty">${getLabel(context.state.lang, 'doc.empty')}</p>`;
+    return;
+  }
+
   nav.innerHTML = sections
     .map(
       (section) => `
@@ -36,10 +41,6 @@ export function renderNav(context: AppContext): void {
       `,
     )
     .join('');
-
-  if (!getDocsByLang(context.state.lang).length) {
-    nav.innerHTML = `<p class="empty">${getLabel(context.state.lang, 'doc.empty')}</p>`;
-  }
 }
 
 export function getNavNodeKey(node: NavNode): string {
@@ -76,7 +77,7 @@ function renderNavNode(context: AppContext, node: NavNode, activeAncestorKeys: S
     : '<span class="nav-item-spacer" aria-hidden="true"></span>';
   const label = node.id
     ? `
-      <a class="doc-link" href="${getDocUrl(context.state.lang, node.id)}"${active}>
+      <a class="doc-link" href="${getDocUrl(node.id)}"${active}>
         <span>${escapeHtml(node.title)}</span>
       </a>
     `

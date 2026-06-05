@@ -35,6 +35,20 @@ const manifest = docsManifest as DocsManifest;
 export const docs = manifest.docs;
 export const navTree = manifest.nav;
 
+// Precomputed indexes — built once at module init for O(1) lookups
+const _docsByLang = new Map<Lang, Doc[]>();
+const _docByKey = new Map<string, Doc>();
+
+for (const doc of docs) {
+  const langDocs = _docsByLang.get(doc.lang);
+  if (langDocs) {
+    langDocs.push(doc);
+  } else {
+    _docsByLang.set(doc.lang, [doc]);
+  }
+  _docByKey.set(`${doc.lang}:${doc.id}`, doc);
+}
+
 export function compareDocs(a: Doc, b: Doc): number {
   if (a.lang !== b.lang) {
     return a.lang.localeCompare(b.lang);
@@ -52,11 +66,11 @@ export function compareDocs(a: Doc, b: Doc): number {
 }
 
 export function getDocsByLang(lang: Lang): Doc[] {
-  return docs.filter((doc) => doc.lang === lang);
+  return _docsByLang.get(lang) ?? [];
 }
 
 export function getDocByKey(lang: Lang, id: string): Doc | undefined {
-  return docs.find((doc) => doc.lang === lang && doc.id === id);
+  return _docByKey.get(`${lang}:${id}`);
 }
 
 export function findNavNodePath(lang: Lang, id: string): NavNode[] {

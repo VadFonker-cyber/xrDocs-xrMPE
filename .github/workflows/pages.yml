@@ -2,7 +2,7 @@ name: Deploy Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - '.github/workflows/pages.yml'
       - '.npmrc'
@@ -29,30 +29,68 @@ concurrency:
 
 jobs:
   build:
-    environment:
-      name: github-pages
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout production
         uses: actions/checkout@v6
         with:
+          ref: main
+          path: production
           fetch-depth: 0
+
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+          path: develop
+          fetch-depth: 0
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version-file: .nvmrc
+          node-version-file: production/.nvmrc
           cache: npm
-      - name: Install dependencies
+          cache-dependency-path: |
+            production/package-lock.json
+            develop/package-lock.json
+
+      - name: Install production dependencies
+        working-directory: production
         run: npm ci
-      - name: Build
+
+      - name: Build production
+        working-directory: production
         env:
+          SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/
+          VITE_BASE_PATH: /xrDocs-xrMPE/
           VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
           VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: npm run build
+
+      - name: Install develop dependencies
+        working-directory: develop
+        run: npm ci
+
+      - name: Build develop
+        working-directory: develop
+        env:
+          NOINDEX: true
+          SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/develop/
+          VITE_BASE_PATH: /xrDocs-xrMPE/develop/
+          VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
+          VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
+        run: npm run build
+
+      - name: Assemble Pages artifact
+        run: |
+          mkdir -p pages-dist/develop
+          cp -a production/dist/. pages-dist/
+          cp -a develop/dist/. pages-dist/develop/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: dist
+          path: pages-dist
 
   deploy:
     environment:

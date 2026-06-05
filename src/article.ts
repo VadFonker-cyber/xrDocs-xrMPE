@@ -1,18 +1,8 @@
 import type { Doc } from './docs';
-import { basePath, getDocUrl } from './routing';
+import { basePath, getAssetUrl } from './routing';
+import type { TocItem, RenderedDoc } from './types';
 
-export type TocItem = {
-  id: string;
-  title: string;
-  level: number;
-  children: TocItem[];
-  parentId?: string;
-};
-
-export type RenderedDoc = {
-  html: string;
-  toc: TocItem[];
-};
+export type { TocItem, RenderedDoc };
 
 const renderedDocCache = new Map<string, RenderedDoc>();
 const renderedDocFetches = new Map<string, Promise<RenderedDoc>>();
@@ -66,7 +56,7 @@ export async function loadRenderedDoc(doc: Doc): Promise<RenderedDoc> {
     return cachedFetch;
   }
 
-  const fetchPromise = import.meta.env.DEV ? renderMarkdownDoc(doc) : fetchPrerenderedDoc(doc);
+  const fetchPromise = import.meta.env.DEV ? renderMarkdownDoc(doc) : fetchRenderedDoc(doc);
   renderedDocFetches.set(cacheKey, fetchPromise);
 
   try {
@@ -77,24 +67,14 @@ export async function loadRenderedDoc(doc: Doc): Promise<RenderedDoc> {
   }
 }
 
-export async function fetchPrerenderedDoc(doc: Doc): Promise<RenderedDoc> {
-  const response = await fetch(getDocUrl(doc.lang, doc.id), { cache: 'force-cache' });
+export async function fetchRenderedDoc(doc: Doc): Promise<RenderedDoc> {
+  const response = await fetch(getAssetUrl(getRenderedDocAssetPath(doc)), { cache: 'force-cache' });
 
   if (!response.ok) {
-    throw new Error(`Prerendered document request failed for ${doc.path} with ${response.status}.`);
+    throw new Error(`Rendered document request failed for ${doc.path} with ${response.status}.`);
   }
 
-  const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-  const article = page.querySelector<HTMLElement>('#docArticle');
-
-  if (!article) {
-    throw new Error(`Prerendered article was not found for ${doc.path}.`);
-  }
-
-  return {
-    html: article.innerHTML,
-    toc: createTocFromArticle(article),
-  };
+  return response.json() as Promise<RenderedDoc>;
 }
 
 export async function renderMarkdownDoc(doc: Doc): Promise<RenderedDoc> {
@@ -164,4 +144,8 @@ export function createTocFromArticle(article: HTMLElement): TocItem[] {
 
 export function getDocCacheKey(doc: Doc): string {
   return `${doc.lang}:${doc.id}`;
+}
+
+function getRenderedDocAssetPath(doc: Doc): string {
+  return `doc-content/${doc.lang}/${doc.id.split('/').map(encodeURIComponent).join('/')}/index.json`;
 }

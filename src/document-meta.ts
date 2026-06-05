@@ -23,13 +23,20 @@ export function updateDocumentMeta(doc: Doc): void {
   setMetaContent('name', 'twitter:description', description);
 }
 
+const metaCache = new Map<string, HTMLMetaElement>();
+
 function setMetaContent(attribute: 'name' | 'property', value: string, content: string): void {
-  let element = document.querySelector<HTMLMetaElement>(`meta[${attribute}="${value}"]`);
+  const cacheKey = `${attribute}:${value}`;
+  let element = metaCache.get(cacheKey);
 
   if (!element) {
-    element = document.createElement('meta');
-    element.setAttribute(attribute, value);
-    document.head.append(element);
+    const existing = document.querySelector<HTMLMetaElement>(`meta[${attribute}="${value}"]`);
+    element = existing ?? document.createElement('meta');
+    if (!existing) {
+      element.setAttribute(attribute, value);
+      document.head.append(element);
+    }
+    metaCache.set(cacheKey, element);
   }
 
   element.content = content;

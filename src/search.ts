@@ -18,6 +18,8 @@ type SearchIndexEntry = {
   section: string;
   text: string;
   searchText?: string;
+  searchTitle?: string;
+  searchSection?: string;
 };
 
 type SearchIndex = {
@@ -73,6 +75,8 @@ export async function renderSearchResults(
     return;
   }
 
+  const hlFn = buildHighlighter(query, context.state.lang);
+
   nav.innerHTML = `
     <section class="nav-section search-results">
       <h2>${escapeHtml(getLabel(context.state.lang, 'search.results'))} <span>${results.length}</span></h2>
@@ -81,10 +85,10 @@ export async function renderSearchResults(
           const active = doc.id === context.state.activeId ? ' aria-current="page"' : '';
 
           return `
-            <a class="doc-link search-result" href="${getDocUrl(doc.lang, doc.id)}"${active}>
-              <span>${highlight(doc.title, query, context.state.lang)}</span>
+            <a class="doc-link search-result" href="${getDocUrl(doc.id)}"${active}>
+              <span>${hlFn(doc.title)}</span>
               <small>${escapeHtml(doc.section)} &middot; ${escapeHtml(doc.path)}</small>
-              <p>${highlight(excerpt, query, context.state.lang)}</p>
+              <p>${hlFn(excerpt)}</p>
             </a>
           `;
         })
@@ -114,8 +118,8 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
         return undefined;
       }
 
-      const title = normalizeSearch(entry.title, lang);
-      const section = normalizeSearch(entry.section, lang);
+      const title = getEntryTitle(entry);
+      const section = getEntrySection(entry);
       const content = getSearchEntryText(entry);
       let score = 0;
 
@@ -167,7 +171,23 @@ function getSearchEntryText(entry: SearchIndexEntry): string {
   return entry.searchText;
 }
 
-function highlight(value: string, query: string, lang: Lang): string {
+function getEntryTitle(entry: SearchIndexEntry): string {
+  if (!entry.searchTitle) {
+    entry.searchTitle = normalizeSearch(entry.title, entry.lang);
+  }
+
+  return entry.searchTitle;
+}
+
+function getEntrySection(entry: SearchIndexEntry): string {
+  if (!entry.searchSection) {
+    entry.searchSection = normalizeSearch(entry.section, entry.lang);
+  }
+
+  return entry.searchSection;
+}
+
+function buildHighlighter(query: string, lang: Lang): (value: string) => string {
   const terms = normalizeSearch(query, lang)
     .split(/\s+/)
     .filter(Boolean)
@@ -175,11 +195,11 @@ function highlight(value: string, query: string, lang: Lang): string {
     .map(escapeRegExp);
 
   if (!terms.length) {
-    return escapeHtml(value);
+    return escapeHtml;
   }
 
   const pattern = new RegExp(`(${terms.join('|')})`, 'giu');
-  return escapeHtml(value).replace(pattern, '<mark>$1</mark>');
+  return (value: string) => escapeHtml(value).replace(pattern, '<mark>$1</mark>');
 }
 
 function scheduleSearchStatistics(context: AppContext, query: string, resultCount: number): void {

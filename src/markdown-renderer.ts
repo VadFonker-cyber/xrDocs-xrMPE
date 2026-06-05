@@ -10,21 +10,8 @@ import markdown from 'highlight.js/lib/languages/markdown';
 import plaintext from 'highlight.js/lib/languages/plaintext';
 import powershell from 'highlight.js/lib/languages/powershell';
 import xml from 'highlight.js/lib/languages/xml';
-
-export type Lang = 'ru' | 'en';
-
-export type TocItem = {
-  id: string;
-  title: string;
-  level: number;
-  children: TocItem[];
-  parentId?: string;
-};
-
-export type RenderedDoc = {
-  html: string;
-  toc: TocItem[];
-};
+import type { Lang } from './docs';
+import type { TocItem, RenderedDoc } from './types';
 
 type RenderOptions = {
   basePath: string;
@@ -340,12 +327,17 @@ function rewriteDocLinks(html: string, currentLang: Lang): string {
       .replace(/^(ru|en)\//, '')
       .replace(/\.md$/, '');
 
-    return `href="${getDocUrl(currentLang, normalized)}${hash ? `#${hash}` : ''}"`;
+    return `href="${getDocUrl(normalized)}${hash ? `#${hash}` : ''}"`;
   });
 }
 
-function getDocUrl(lang: Lang, id: string): string {
-  return `${activeBasePath}${lang}/${id.split('/').map(encodeURIComponent).join('/')}/`;
+function getDocUrl(id: string): string {
+  if (id === 'index') {
+    return activeBasePath;
+  }
+
+  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  return encodedId ? `${activeBasePath}${encodedId}/` : activeBasePath;
 }
 
 function getAssetUrl(src: string): string {

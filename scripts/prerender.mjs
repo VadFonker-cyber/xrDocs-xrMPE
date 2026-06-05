@@ -2,17 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import MarkdownIt from 'markdown-it';
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import dos from 'highlight.js/lib/languages/dos';
-import ini from 'highlight.js/lib/languages/ini';
-import json from 'highlight.js/lib/languages/json';
-import markdown from 'highlight.js/lib/languages/markdown';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import powershell from 'highlight.js/lib/languages/powershell';
-import xml from 'highlight.js/lib/languages/xml';
 import { readContentModel } from './content-model.mjs';
+import { renderDocContent } from './render-doc.mjs';
+import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(rootDir, 'docs');
@@ -20,54 +12,9 @@ const distDir = path.join(rootDir, 'dist');
 const templatePath = path.join(distDir, 'index.html');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/');
+const noindex = isTruthyEnv(process.env.NOINDEX);
 const siteName = 'xrDocs';
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  typographer: true,
-  langPrefix: 'language-',
-  highlight: highlightCode,
-});
-const defaultImageRule = md.renderer.rules.image;
-const defaultFenceRule = md.renderer.rules.fence;
-
-hljs.registerLanguage('ini', ini);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('bat', dos);
-hljs.registerLanguage('batch', dos);
-hljs.registerLanguage('cmd', dos);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('powershell', powershell);
-hljs.registerLanguage('ps1', powershell);
-hljs.registerLanguage('pwsh', powershell);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('text', plaintext);
-hljs.registerLanguage('plaintext', plaintext);
-hljs.registerLanguage('xml', xml);
-
-md.renderer.rules.image = (tokens, index, options, env, self) => {
-  const token = tokens[index];
-  const srcIndex = token.attrIndex('src');
-
-  if (srcIndex >= 0) {
-    const src = token.attrs?.[srcIndex]?.[1] || '';
-
-    if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetPath(src));
-
-      if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(src)));
-      }
-    }
-  }
-
-  return defaultImageRule
-    ? defaultImageRule(tokens, index, options, env, self)
-    : self.renderToken(tokens, index, options);
-};
 
 const siteMeta = {
   ru: {
@@ -80,53 +27,31 @@ const siteMeta = {
   },
 };
 
-md.renderer.rules.fence = (tokens, index, options, env, self) => {
-  const token = tokens[index];
-  const callout = parseAdmonishInfo(token.info);
-
-  if (!callout) {
-    return renderFenceCode(token);
-  }
-
-  const title = callout.title || getDefaultCalloutTitle(callout.kind);
-  const body = md.render(token.content, env);
-
-  return [
-    `<aside class="doc-callout doc-callout-${escapeHtml(callout.kind)}" role="note">`,
-    `<p class="doc-callout-title">${escapeHtml(title)}</p>`,
-    `<div class="doc-callout-body">${body}</div>`,
-    '</aside>',
-  ].join('');
-};
-
-function renderFenceCode(token) {
-  const language = token.info.trim().split(/\s+/)[0]?.toLowerCase() || '';
-  const className = language ? ` class="${escapeHtml(md.options.langPrefix + language)}"` : '';
-  const content = highlightCode(token.content, language);
-
-  return `<pre><code${className}>${content}</code></pre>\n`;
-}
-
 const template = fs.readFileSync(templatePath, 'utf8');
 const { docs, nav } = readContentModel(docsDir);
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
-const pages = docs.map((doc) => ({
-  doc,
-  canonicalPath: getDocPath(doc.lang, doc.id),
-  outputPath: path.join(distDir, doc.lang, ...doc.id.split('/'), 'index.html'),
-}));
+const pages = getCanonicalDocs()
+  .filter((doc) => doc.id !== 'index')
+  .map((doc) => ({
+    doc,
+    canonicalPath: getDocPath(doc.id),
+    outputPath: path.join(distDir, ...doc.id.split('/'), 'index.html'),
+  }));
 
 for (const page of pages) {
   writePage(page.doc, page.canonicalPath, page.outputPath);
 }
 
-const defaultDoc = firstByLang.get('ru') || docs[0];
+const defaultDoc = firstByLang.get('en') || docs[0];
 
 if (defaultDoc) {
   writePage(defaultDoc, '/', templatePath);
 }
 
-writeSitemap(pages);
+if (!noindex) {
+  writeSitemap(pages);
+}
+
 writeRobots();
 
 console.log(`Prerendered ${pages.length} documentation pages.`);
@@ -150,11 +75,9 @@ function writePage(doc, canonicalPath, outputPath) {
   html = setMeta(html, 'name', 'twitter:description', description);
   html = upsertLink(html, 'canonical', canonicalUrl);
 
-  for (const alternate of getAlternates(doc)) {
-    html = upsertLink(html, 'alternate', toAbsoluteUrl(getDocPath(alternate.lang, alternate.id)), alternate.lang);
+  if (noindex) {
+    html = setMeta(html, 'name', 'robots', 'noindex, nofollow');
   }
-
-  html = upsertLink(html, 'alternate', getXDefaultUrl(doc, canonicalPath), 'x-default');
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, html);
@@ -163,7 +86,7 @@ function writePage(doc, canonicalPath, outputPath) {
 function renderStaticBody(activeDoc) {
   const copy = readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = renderDocContent(activeDoc.content, activeDoc.lang);
+  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath }).html;
   const docKey = `${activeDoc.lang}:${activeDoc.id}`;
 
   return `
@@ -245,7 +168,7 @@ function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
     : '<span class="nav-item-spacer" aria-hidden="true"></span>';
   const label = node.id
     ? `
-      <a class="doc-link" href="${getDocPath(activeDoc.lang, node.id)}"${active}>
+      <a class="doc-link" href="${getDocPath(node.id)}"${active}>
         <span>${escapeHtml(node.title)}</span>
       </a>
     `
@@ -309,27 +232,15 @@ function writeSitemap(pages) {
 }
 
 function writeRobots() {
+  if (noindex) {
+    fs.writeFileSync(path.join(distDir, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
+    return;
+  }
+
   fs.writeFileSync(
     path.join(distDir, 'robots.txt'),
     `User-agent: *\nAllow: /\n\nSitemap: ${toAbsoluteUrl('/sitemap.xml')}\n`,
   );
-}
-
-function getAlternates(doc) {
-  return ['ru', 'en']
-    .map((lang) => docs.find((candidate) => candidate.lang === lang && candidate.id === doc.id) || firstByLang.get(lang))
-    .filter(Boolean);
-}
-
-function getXDefaultUrl(doc, canonicalPath) {
-  if (canonicalPath === '/') {
-    return siteUrl;
-  }
-
-  const fallbackDoc =
-    docs.find((candidate) => candidate.lang === 'ru' && candidate.id === doc.id) || firstByLang.get('ru') || doc;
-
-  return toAbsoluteUrl(getDocPath(fallbackDoc.lang, fallbackDoc.id));
 }
 
 function getLatestUpdatedAt(items) {
@@ -370,70 +281,6 @@ function formatSitemapDate(value) {
   return value.toISOString().slice(0, 10);
 }
 
-function renderDocContent(content, lang) {
-  const tokens = md.parse(content, {});
-  applyHeadingIds(tokens, lang);
-
-  return rewriteDocLinks(md.renderer.render(tokens, md.options, {}), lang);
-}
-
-function applyHeadingIds(tokens, lang) {
-  const slugCounts = new Map();
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-
-    if (token.type !== 'heading_open') {
-      continue;
-    }
-
-    const inline = tokens[index + 1];
-    const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
-    slugCounts.set(baseSlug, count);
-    token.attrSet('id', id);
-  }
-}
-
-function slugifyHeading(value, lang) {
-  return value
-    .toLocaleLowerCase(lang)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
-}
-
-function highlightCode(source, language) {
-  const lang = language.trim().toLowerCase();
-
-  try {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(source, { language: lang, ignoreIllegals: true }).value;
-    }
-  } catch {
-    return escapeHtml(source);
-  }
-
-  return escapeHtml(source);
-}
-
-function rewriteDocLinks(html, currentLang) {
-  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (_match, link) => {
-    const [linkPath, hash = ''] = link.split('#');
-    const normalized = linkPath
-      .replace(/^\.\//, '')
-      .replace(/^docs\//, '')
-      .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/i, '');
-
-    return `href="${getDocPath(currentLang, normalized)}${hash ? `#${hash}` : ''}"`;
-  });
-}
-
 function readLabels(lang) {
   const localePath = path.join(rootDir, 'src', 'locales', `${lang}.json`);
 
@@ -456,12 +303,9 @@ function setMeta(html, attribute, name, content) {
   return html.replace('</head>', `    ${tag}\n  </head>`);
 }
 
-function upsertLink(html, rel, href, hreflang) {
-  const hreflangAttribute = hreflang ? ` hreflang="${hreflang}"` : '';
-  const tag = `<link rel="${rel}"${hreflangAttribute} href="${escapeHtml(href)}" />`;
-  const pattern = hreflang
-    ? new RegExp(`<link\\s+rel="${rel}"\\s+hreflang="${escapeRegExp(hreflang)}"\\s+href="[^"]*"\\s*/?>`)
-    : new RegExp(`<link\\s+rel="${rel}"\\s+href="[^"]*"\\s*/?>`);
+function upsertLink(html, rel, href) {
+  const tag = `<link rel="${rel}" href="${escapeHtml(href)}" />`;
+  const pattern = new RegExp(`<link\\s+rel="${rel}"\\s+href="[^"]*"\\s*/?>`);
 
   if (pattern.test(html)) {
     return html.replace(pattern, tag);
@@ -470,31 +314,39 @@ function upsertLink(html, rel, href, hreflang) {
   return html.replace('</head>', `    ${tag}\n  </head>`);
 }
 
-function getDocPath(lang, id) {
-  return `${basePath}${lang}/${id.split('/').map(encodeURIComponent).join('/')}/`;
+function getCanonicalDocs() {
+  const byId = new Map();
+
+  for (const doc of docs) {
+    const existing = byId.get(doc.id);
+
+    if (!existing || doc.lang === 'en') {
+      byId.set(doc.id, doc);
+    }
+  }
+
+  return [...byId.values()].sort(compareCanonicalDocs);
+}
+
+function compareCanonicalDocs(a, b) {
+  if (a.order !== b.order) {
+    return a.order - b.order;
+  }
+
+  return a.id.localeCompare(b.id);
+}
+
+function getDocPath(id) {
+  if (id === 'index') {
+    return basePath;
+  }
+
+  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  return encodedId ? `${basePath}${encodedId}/` : basePath;
 }
 
 function getAssetPath(src) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
-}
-
-function isThemeAssetSrc(src) {
-  const { path: assetPath } = splitAssetSrc(src);
-  return /\.(dark|light)\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(assetPath);
-}
-
-function normalizeThemeAssetSrc(src) {
-  const { path: assetPath, suffix } = splitAssetSrc(src);
-  return `${assetPath.replace(/\.(dark|light)(\.(?:avif|gif|jpe?g|png|svg|webp))$/i, '$2')}${suffix}`;
-}
-
-function splitAssetSrc(src) {
-  const match = src.match(/^([^?#]+)([?#].*)?$/);
-
-  return {
-    path: match?.[1] || src,
-    suffix: match?.[2] || '',
-  };
 }
 
 function inlineStylesheets(html) {
@@ -526,9 +378,6 @@ function getDistAssetPath(href) {
   return path.join(distDir, ...relativePath.split('/'));
 }
 
-function isLocalAssetSrc(src) {
-  return !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src);
-}
 
 function toAbsoluteUrl(urlPath) {
   if (urlPath === '/') {
@@ -554,38 +403,10 @@ function normalizeSiteUrl(value) {
   return `${value.replace(/\/+$/g, '')}/`;
 }
 
-function parseAdmonishInfo(info) {
-  const match = info.trim().match(/^admonish\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?$/i);
-
-  if (!match) {
-    return undefined;
-  }
-
-  const title = match[2]?.match(/\btitle=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i);
-
-  return {
-    kind: match[1].toLowerCase(),
-    title: title?.[1] || title?.[2] || title?.[3],
-  };
-}
-
-function getDefaultCalloutTitle(kind) {
-  return kind === 'warning' ? 'Важно' : kind;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+function isTruthyEnv(value) {
+  return /^(?:1|true|yes|on)$/i.test(String(value || '').trim());
 }
 
 function escapeXml(value) {
   return escapeHtml(value).replace(/&#039;/g, '&apos;');
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

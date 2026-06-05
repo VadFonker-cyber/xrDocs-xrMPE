@@ -1,5 +1,5 @@
 import { docs, getDocsByLang, type Lang } from './docs';
-import { detectBrowserLang, readSavedLang, type AppState } from './state';
+import { readSavedLang, type AppState } from './state';
 
 export type Route = {
   lang: Lang;
@@ -7,20 +7,13 @@ export type Route = {
 };
 
 export const basePath = normalizeBasePath(import.meta.env.BASE_URL);
+const defaultLang: Lang = 'en';
 
 export function readRoute(): Route {
-  const savedLang = readSavedLang() || detectBrowserLang();
+  const savedLang = readSavedLang() || defaultLang;
 
   if (location.hash.startsWith('#/')) {
     const value = decodeURIComponent(location.hash.replace(/^#\/?/, '')).replace(/\.md$/, '');
-    const [maybeLang, ...rest] = value.split('/').filter(Boolean);
-
-    if (maybeLang === 'ru' || maybeLang === 'en') {
-      return {
-        lang: maybeLang,
-        id: rest.join('/'),
-      };
-    }
 
     return {
       lang: savedLang,
@@ -28,7 +21,7 @@ export function readRoute(): Route {
     };
   }
 
-  const route = readRouteFromPath(location.pathname);
+  const route = readRouteFromPath(location.pathname, savedLang);
 
   if (route) {
     return route;
@@ -46,36 +39,24 @@ export function readRoute(): Route {
   };
 }
 
-export function readRouteFromPath(pathname: string): Route | undefined {
+export function readRouteFromPath(pathname: string, lang: Lang = readSavedLang() || defaultLang): Route | undefined {
   const path = stripBasePath(decodeURIComponent(pathname))
     .replace(/\/index\.html$/, '/')
     .replace(/^\/+|\/+$/g, '');
-  const [maybeLang, ...rest] = path.split('/').filter(Boolean);
 
-  if (maybeLang === 'ru' || maybeLang === 'en') {
-    return {
-      lang: maybeLang,
-      id: rest.join('/').replace(/\.md$/i, ''),
-    };
-  }
-
-  const langIndex = path.split('/').findIndex((part) => part === 'ru' || part === 'en');
-
-  if (langIndex >= 0) {
-    const parts = path.split('/').slice(langIndex);
-    const [lang, ...idParts] = parts;
-
-    return {
-      lang: lang as Lang,
-      id: idParts.join('/').replace(/\.md$/i, ''),
-    };
-  }
-
-  return undefined;
+  return {
+    lang,
+    id: path.replace(/\.md$/i, ''),
+  };
 }
 
-export function getDocUrl(lang: Lang, id: string): string {
-  return `${basePath}${lang}/${id.split('/').map(encodeURIComponent).join('/')}/`;
+export function getDocUrl(id: string): string {
+  if (id === 'index') {
+    return basePath;
+  }
+
+  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  return encodedId ? `${basePath}${encodedId}/` : basePath;
 }
 
 export function getAssetUrl(src: string): string {
@@ -101,14 +82,13 @@ export function navigateToLink(event: MouseEvent, link: HTMLAnchorElement, state
     return;
   }
 
-  const route = readRouteFromPath(url.pathname);
+  const route = readRouteFromPath(url.pathname, state.lang);
 
   if (!route) {
     return;
   }
 
   event.preventDefault();
-  state.lang = route.lang;
   state.activeId = route.id || getDocsByLang(route.lang)[0]?.id || docs[0].id;
   history.pushState(null, '', `${url.pathname}${url.hash}`);
   render();

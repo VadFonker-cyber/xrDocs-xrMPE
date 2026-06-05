@@ -1,5 +1,5 @@
 import type { AppContext } from './app-context';
-import type { TocItem } from './article';
+import type { TocItem } from './types';
 import type { Doc, Lang } from './docs';
 import { normalizeSearch } from './search';
 import { clamp, escapeHtml, getLabel } from './utils/html';
@@ -8,6 +8,41 @@ import { maxTocWidth, minTocWidth } from './state';
 let headingObserver: IntersectionObserver | undefined;
 let headingObserverFrame: number | undefined;
 let currentTocItems: TocItem[] = [];
+// Cached flat item map — invalidated when the document changes
+let tocItemById: Map<string, TocItem> | undefined;
+
+// Cached DOM references — valid for the lifetime of the shell
+type TocRefs = {
+  panel: HTMLElement;
+  nav: HTMLElement;
+  input: HTMLInputElement | null;
+  collapseToggle: HTMLButtonElement;
+  searchToggle: HTMLButtonElement | null;
+  tocToggle: HTMLButtonElement | null;
+  heading: HTMLHeadingElement | null;
+};
+
+let tocRefs: TocRefs | undefined;
+
+function getOrInitTocRefs(): TocRefs | undefined {
+  if (tocRefs) return tocRefs;
+
+  const panel = document.querySelector<HTMLElement>('#tocPanel');
+  const nav = document.querySelector<HTMLElement>('#tocNav');
+  const collapseToggle = document.querySelector<HTMLButtonElement>('#tocCollapseToggle');
+
+  if (!panel || !nav || !collapseToggle) return undefined;
+
+  return (tocRefs = {
+    panel,
+    nav,
+    input: document.querySelector<HTMLInputElement>('#tocSearchInput'),
+    collapseToggle,
+    searchToggle: document.querySelector<HTMLButtonElement>('#tocSearchToggle'),
+    tocToggle: document.querySelector<HTMLButtonElement>('#tocToggle'),
+    heading: panel.querySelector<HTMLHeadingElement>('.toc-header h2'),
+  });
+}
 
 export function getCurrentTocItems(): TocItem[] {
   return currentTocItems;
@@ -15,6 +50,7 @@ export function getCurrentTocItems(): TocItem[] {
 
 export function setCurrentTocItems(items: TocItem[]): void {
   currentTocItems = items;
+  tocItemById = undefined;
 }
 
 export function resetTocState(context: AppContext): void {
@@ -58,17 +94,13 @@ export function cancelScheduledHeadingObserver(): void {
 }
 
 export function renderToc(context: AppContext): void {
-  const panel = document.querySelector<HTMLElement>('#tocPanel');
-  const nav = document.querySelector<HTMLElement>('#tocNav');
-  const input = document.querySelector<HTMLInputElement>('#tocSearchInput');
-  const collapseToggle = document.querySelector<HTMLButtonElement>('#tocCollapseToggle');
-  const searchToggle = document.querySelector<HTMLButtonElement>('#tocSearchToggle');
-  const tocToggle = document.querySelector<HTMLButtonElement>('#tocToggle');
-  const heading = panel?.querySelector<HTMLHeadingElement>('.toc-header h2');
+  const refs = getOrInitTocRefs();
 
-  if (!panel || !nav || !collapseToggle) {
+  if (!refs) {
     return;
   }
+
+  const { panel, nav, input, collapseToggle, searchToggle, tocToggle, heading } = refs;
 
   panel.hidden = false;
   panel.setAttribute('aria-label', getLabel(context.state.lang, 'toc.title'));
@@ -244,11 +276,14 @@ function filterTocItem(item: TocItem, terms: string[], lang: Lang): TocItem | un
   };
 }
 
-function getCollapsibleTocIds(items: TocItem[]): string[] {
-  return items.flatMap((item) => [
-    ...(item.children.length ? [item.id] : []),
-    ...getCollapsibleTocIds(item.children),
-  ]);
+function getCollapsibleTocIds(items: TocItem[], result: string[] = []): string[] {
+  for (const item of items) {
+    if (item.children.length) {
+      result.push(item.id);
+      getCollapsibleTocIds(item.children, result);
+    }
+  }
+  return result;
 }
 
 function observeArticleHeadings(context: AppContext, article: HTMLElement): void {
@@ -287,9 +322,12 @@ function observeArticleHeadings(context: AppContext, article: HTMLElement): void
 }
 
 function expandTocAncestors(context: AppContext, id: string): boolean {
-  const itemById = new Map<string, TocItem>();
-  flattenToc(currentTocItems).forEach((item) => itemById.set(item.id, item));
-  let current = itemById.get(id);
+  if (!tocItemById) {
+    tocItemById = new Map<string, TocItem>();
+    flattenToc(currentTocItems).forEach((item) => tocItemById!.set(item.id, item));
+  }
+
+  let current = tocItemById.get(id);
   let changed = false;
 
   while (current?.parentId) {
@@ -297,18 +335,22 @@ function expandTocAncestors(context: AppContext, id: string): boolean {
       changed = true;
     }
 
-    current = itemById.get(current.parentId);
+    current = tocItemById.get(current.parentId);
   }
 
   return changed;
 }
 
-function flattenToc(items: TocItem[]): TocItem[] {
-  return items.flatMap((item) => [item, ...flattenToc(item.children)]);
+function flattenToc(items: TocItem[], result: TocItem[] = []): TocItem[] {
+  for (const item of items) {
+    result.push(item);
+    flattenToc(item.children, result);
+  }
+  return result;
 }
 
 function updateActiveTocLink(context: AppContext): void {
-  const nav = document.querySelector<HTMLElement>('#tocNav');
+  const nav = tocRefs?.nav ?? document.querySelector<HTMLElement>('#tocNav');
 
   if (!nav) {
     return;
