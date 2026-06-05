@@ -1,7 +1,16 @@
-name: Deploy Develop Pages
+name: Manage Develop Pages
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: Develop site action
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - remove
 
 permissions:
   contents: read
@@ -24,6 +33,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout develop
+        if: inputs.action == 'deploy'
         uses: actions/checkout@v6
         with:
           ref: develop
@@ -51,10 +61,12 @@ jobs:
         run: npm run build
 
       - name: Install develop dependencies
+        if: inputs.action == 'deploy'
         working-directory: develop
         run: npm ci
 
       - name: Build develop
+        if: inputs.action == 'deploy'
         working-directory: develop
         env:
           NOINDEX: true
@@ -64,11 +76,14 @@ jobs:
           VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: npm run build
 
-      - name: Assemble Pages artifact with develop
+      - name: Assemble Pages artifact
         run: |
-          mkdir -p pages-dist/develop
+          mkdir -p pages-dist
           cp -a production/dist/. pages-dist/
-          cp -a develop/dist/. pages-dist/develop/
+          if [ "${{ inputs.action }}" = "deploy" ]; then
+            mkdir -p pages-dist/develop
+            cp -a develop/dist/. pages-dist/develop/
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
