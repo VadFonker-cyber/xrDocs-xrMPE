@@ -11,14 +11,23 @@ import plaintext from 'highlight.js/lib/languages/plaintext';
 import powershell from 'highlight.js/lib/languages/powershell';
 import xml from 'highlight.js/lib/languages/xml';
 import type { Lang } from './docs';
+import { getAssetUrl, getDocUrl, isLocalAssetSrc } from './routing';
 import type { TocItem, RenderedDoc } from './types';
+import { escapeHtml, getLabel, splitAssetSrc } from './utils/html';
 
 type RenderOptions = {
   basePath: string;
 };
 
+type RenderEnv = {
+  basePath: string;
+  lang: Lang;
+};
+
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
-let activeBasePath = '/';
+const alertTypes = ['note', 'tip', 'important', 'warning', 'caution'] as const;
+
+type AlertType = (typeof alertTypes)[number];
 
 const md = new MarkdownIt({
   html: false,
@@ -45,10 +54,9 @@ hljs.registerLanguage('plaintext', plaintext);
 hljs.registerLanguage('xml', xml);
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
+md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
 
 const defaultImageRule = md.renderer.rules.image;
-const defaultFenceRule = md.renderer.rules.fence;
-
 (['th_open', 'td_open'] as const).forEach((ruleName) => {
   const defaultRule = md.renderer.rules[ruleName];
 
@@ -70,15 +78,16 @@ const defaultFenceRule = md.renderer.rules.fence;
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
   const srcIndex = token.attrIndex('src');
+  const renderEnv = env as RenderEnv;
 
   if (srcIndex >= 0) {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetUrl(src));
+      token.attrSet('src', getAssetUrl(src, renderEnv.basePath));
 
       if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src)));
+        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src), renderEnv.basePath));
       }
     }
   }
@@ -90,21 +99,7 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
 
 md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index];
-  const callout = parseAdmonishInfo(token.info);
-
-  if (!callout) {
-    return renderFenceCode(token);
-  }
-
-  const title = callout.title || getDefaultCalloutTitle(callout.kind);
-  const body = md.render(token.content, env);
-
-  return [
-    `<aside class="doc-callout doc-callout-${escapeHtml(callout.kind)}" role="note">`,
-    `<p class="doc-callout-title">${escapeHtml(title)}</p>`,
-    `<div class="doc-callout-body">${body}</div>`,
-    '</aside>',
-  ].join('');
+  return renderFenceCode(token);
 };
 
 function renderFenceCode(token: Token): string {
@@ -115,13 +110,120 @@ function renderFenceCode(token: Token): string {
   return `<pre><code${className}>${content}</code></pre>\n`;
 }
 
+function applyGithubAlerts(state: StateCore): void {
+  const tokens = state.tokens;
+  const env = state.env as RenderEnv;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'blockquote_open') {
+      continue;
+    }
+
+    const closeIndex = findClosingToken(tokens, index, 'blockquote_close');
+    if (closeIndex === -1) {
+      continue;
+    }
+
+    const inlineIndex = findFirstInlineToken(tokens, index, closeIndex);
+    if (inlineIndex === -1) {
+      index = closeIndex;
+      continue;
+    }
+
+    const alertType = stripGithubAlertMarker(tokens[inlineIndex]);
+    if (!alertType) {
+      index = closeIndex;
+      continue;
+    }
+
+    token.type = 'html_block';
+    token.tag = '';
+    token.nesting = 0;
+    token.content = [
+      `<aside class="doc-callout doc-callout-${alertType}" role="note">`,
+      `<p class="doc-callout-title">${escapeHtml(getDefaultCalloutTitle(alertType, env.lang))}</p>`,
+      '<div class="doc-callout-body">',
+      '',
+    ].join('\n');
+
+    const closeToken = tokens[closeIndex];
+    closeToken.type = 'html_block';
+    closeToken.tag = '';
+    closeToken.nesting = 0;
+    closeToken.content = '</div>\n</aside>\n';
+
+    index = closeIndex;
+  }
+}
+
+function findFirstInlineToken(tokens: Token[], start: number, end: number): number {
+  for (let index = start + 1; index < end; index += 1) {
+    if (tokens[index].type === 'inline') {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function stripGithubAlertMarker(token: Token): AlertType | undefined {
+  const match = token.content.match(/^\[!(note|tip|important|warning|caution)](?:[ \t]*\n[ \t]*|[ \t]+|$)/i);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const alertType = match[1].toLowerCase() as AlertType;
+  token.content = token.content.slice(match[0].length);
+
+  if (!token.children) {
+    return alertType;
+  }
+
+  let remaining = match[0].length;
+  const children: Token[] = [];
+
+  token.children.forEach((child) => {
+    if (remaining <= 0) {
+      children.push(child);
+      return;
+    }
+
+    if (child.type === 'softbreak' || child.type === 'hardbreak') {
+      remaining -= 1;
+      return;
+    }
+
+    if (child.type !== 'text') {
+      return;
+    }
+
+    if (remaining >= child.content.length) {
+      remaining -= child.content.length;
+      return;
+    }
+
+    child.content = child.content.slice(remaining);
+    remaining = 0;
+
+    if (child.content) {
+      children.push(child);
+    }
+  });
+
+  token.children = children;
+  return alertType;
+}
+
 export function renderDocContent(content: string, lang: Lang, options: RenderOptions): RenderedDoc {
-  activeBasePath = options.basePath;
-  const tokens = md.parse(content, {});
+  const env: RenderEnv = { basePath: options.basePath, lang };
+  const tokens = md.parse(content, env);
   const toc = createToc(tokens, lang);
 
   return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, {}), lang),
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), options.basePath),
     toc,
   };
 }
@@ -299,57 +401,25 @@ function highlightCode(source: string, language: string): string {
   return escapeHtml(source);
 }
 
-function parseAdmonishInfo(info: string): { kind: string; title?: string } | undefined {
-  const match = info.trim().match(/^admonish\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?$/i);
-
-  if (!match) {
-    return undefined;
-  }
-
-  const title = match[2]?.match(/\btitle=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i);
-
-  return {
-    kind: match[1].toLowerCase(),
-    title: title?.[1] || title?.[2] || title?.[3],
-  };
+function getDefaultCalloutTitle(kind: AlertType, lang: Lang): string {
+  return getLabel(lang, `callout.${kind}`);
 }
 
-function getDefaultCalloutTitle(kind: string): string {
-  return kind === 'warning' ? 'Важно' : kind;
-}
+function rewriteDocLinks(html: string, basePath: string): string {
+  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (match, link: string) => {
+    if (!isLocalAssetSrc(link)) {
+      return match;
+    }
 
-function rewriteDocLinks(html: string, currentLang: Lang): string {
-  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (_match, link: string) => {
     const [path, hash = ''] = link.split('#');
     const normalized = path
       .replace(/^\.\//, '')
-      .replace(/^docs\//, '')
+      .replace(/^\/?docs\//, '')
       .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/, '');
+      .replace(/\.md$/i, '');
 
-    return `href="${getDocUrl(normalized)}${hash ? `#${hash}` : ''}"`;
+    return `href="${getDocUrl(normalized, basePath)}${hash ? `#${hash}` : ''}"`;
   });
-}
-
-function getDocUrl(id: string): string {
-  if (id === 'index') {
-    return activeBasePath;
-  }
-
-  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return encodedId ? `${activeBasePath}${encodedId}/` : activeBasePath;
-}
-
-function getAssetUrl(src: string): string {
-  if (!isLocalAssetSrc(src)) {
-    return src;
-  }
-
-  return `${activeBasePath}${src.replace(/^\.?\//, '')}`;
-}
-
-function isLocalAssetSrc(src: string): boolean {
-  return !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src);
 }
 
 function isThemeAssetSrc(src: string): boolean {
@@ -363,22 +433,4 @@ function normalizeThemeAssetSrc(src: string): string {
   const themedSuffix = new RegExp(`\\.(dark|light)(\\.(${themeAssetExtensions}))$`, 'i');
 
   return `${path.replace(themedSuffix, '$2')}${suffix}`;
-}
-
-function splitAssetSrc(src: string): { path: string; suffix: string } {
-  const match = src.match(/^([^?#]+)([?#].*)?$/);
-
-  return {
-    path: match?.[1] || src,
-    suffix: match?.[2] || '',
-  };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }

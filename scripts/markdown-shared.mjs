@@ -56,23 +56,29 @@ export function slugifyHeading(value, lang) {
     .replace(/-{2,}/g, '-');
 }
 
-export function parseAdmonishInfo(info) {
-  const match = info.trim().match(/^admonish\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?$/i);
+const defaultCalloutTitles = {
+  en: {
+    note: 'Note',
+    tip: 'Tip',
+    important: 'Important',
+    warning: 'Warning',
+    caution: 'Caution',
+  },
+  ru: {
+    note: 'Примечание',
+    tip: 'Совет',
+    important: 'Важно',
+    warning: 'Предупреждение',
+    caution: 'Осторожно',
+  },
+};
 
-  if (!match) {
-    return undefined;
+export function getDefaultCalloutTitle(kind, langOrLabels = 'ru') {
+  if (typeof langOrLabels === 'object' && langOrLabels) {
+    return langOrLabels[kind] || kind;
   }
 
-  const title = match[2]?.match(/\btitle=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i);
-
-  return {
-    kind: match[1].toLowerCase(),
-    title: title?.[1] || title?.[2] || title?.[3],
-  };
-}
-
-export function getDefaultCalloutTitle(kind) {
-  return kind === 'warning' ? 'Важно' : kind;
+  return defaultCalloutTitles[langOrLabels]?.[kind] || kind;
 }
 
 export function isLocalAssetSrc(src) {

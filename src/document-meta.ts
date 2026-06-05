@@ -1,18 +1,8 @@
-import type { Doc, Lang } from './docs';
-
-const siteMeta: Record<Lang, { description: string; locale: string }> = {
-  ru: {
-    description: '\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f \u043f\u043e \u043c\u043e\u0434\u0434\u0438\u043d\u0433\u0443 S.T.A.L.K.E.R. \u0434\u043b\u044f xrMPE.',
-    locale: 'ru_RU',
-  },
-  en: {
-    description: 'S.T.A.L.K.E.R. modding documentation for xrMPE.',
-    locale: 'en_US',
-  },
-};
+import type { Doc } from './docs';
+import { siteMeta, siteName } from './site-meta';
 
 export function updateDocumentMeta(doc: Doc): void {
-  const title = `${doc.title} | xrDocs`;
+  const title = `${doc.title} | ${siteName}`;
   const description = siteMeta[doc.lang].description;
 
   setMetaContent('name', 'description', description);

@@ -10,6 +10,15 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#039;');
 }
 
+export function splitAssetSrc(src: string): { path: string; suffix: string } {
+  const match = src.match(/^([^?#]+)([?#].*)?$/);
+
+  return {
+    path: match?.[1] || src,
+    suffix: match?.[2] || '',
+  };
+}
+
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -951,15 +951,50 @@ h1 {
 .doc-callout {
   margin: 24px 0;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--border-strong);
+  border-left: 4px solid var(--callout-accent, var(--border-strong));
   border-radius: 6px;
-  background: var(--surface-soft);
+  background: color-mix(in srgb, var(--callout-accent, var(--border-strong)) 10%, var(--surface-soft));
   padding: 14px 16px;
 }
 
+.doc-callout-note {
+  --callout-accent: #8ca6c8;
+}
+
+.doc-callout-tip {
+  --callout-accent: #8dbb8d;
+}
+
+.doc-callout-important {
+  --callout-accent: #b49ad3;
+}
+
 .doc-callout-warning {
-  border-left-color: #d8b45c;
-  background: color-mix(in srgb, #d8b45c 12%, var(--surface-soft));
+  --callout-accent: #d8b45c;
+}
+
+.doc-callout-caution {
+  --callout-accent: #d27b72;
+}
+
+:root[data-theme="light"] .doc-callout-note {
+  --callout-accent: #4f6f99;
+}
+
+:root[data-theme="light"] .doc-callout-tip {
+  --callout-accent: #4f7f52;
+}
+
+:root[data-theme="light"] .doc-callout-important {
+  --callout-accent: #715a91;
+}
+
+:root[data-theme="light"] .doc-callout-warning {
+  --callout-accent: #946f16;
+}
+
+:root[data-theme="light"] .doc-callout-caution {
+  --callout-accent: #9a493f;
 }
 
 .doc-callout-title {

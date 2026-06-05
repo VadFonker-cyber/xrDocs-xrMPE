@@ -59,6 +59,7 @@ function renderNavNodes(context: AppContext, nodes: NavNode[], activeAncestorKey
   `;
 }
 
+// Static prerender markup in scripts/prerender.mjs mirrors this structure.
 function renderNavNode(context: AppContext, node: NavNode, activeAncestorKeys: Set<string>): string {
   const key = getNavNodeKey(node);
   const hasChildren = node.children.length > 0;

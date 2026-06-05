@@ -5,6 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
+import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
+import { normalizeBasePath } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(rootDir, 'docs');
@@ -13,22 +15,10 @@ const templatePath = path.join(distDir, 'index.html');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/');
 const noindex = isTruthyEnv(process.env.NOINDEX);
-const siteName = 'xrDocs';
-const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
-
-const siteMeta = {
-  ru: {
-    description: 'Документация по моддингу S.T.A.L.K.E.R. для xrMPE.',
-    locale: 'ru_RU',
-  },
-  en: {
-    description: 'S.T.A.L.K.E.R. modding documentation for xrMPE.',
-    locale: 'en_US',
-  },
-};
 
 const template = fs.readFileSync(templatePath, 'utf8');
 const { docs, nav } = readContentModel(docsDir);
+const gitUpdatedAtByPath = getGitUpdatedAtByPath(docs.map((doc) => doc.path));
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
 const pages = getCanonicalDocs()
   .filter((doc) => doc.id !== 'index')
@@ -158,6 +148,7 @@ function renderStaticNavNodes(nodes, activeDoc, activeAncestorKeys) {
   return `<ul class="nav-list">${nodes.map((node) => renderStaticNavNode(node, activeDoc, activeAncestorKeys)).join('')}</ul>`;
 }
 
+// Client markup in src/nav.ts mirrors this static structure.
 function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
   const key = getNavNodeKey(node);
   const hasChildren = node.children.length > 0;
@@ -259,21 +250,42 @@ function getPageUpdatedAt(page) {
 }
 
 function getDocUpdatedAt(doc) {
-  const gitUpdatedAt = getGitUpdatedAt(doc.path);
+  const gitUpdatedAt = gitUpdatedAtByPath.get(doc.path);
 
   return gitUpdatedAt || doc.updatedAt || new Date(0);
 }
 
-function getGitUpdatedAt(relativePath) {
+function getGitUpdatedAtByPath(relativePaths) {
+  const uniquePaths = [...new Set(relativePaths)].filter(Boolean);
+
+  if (!uniquePaths.length) {
+    return new Map();
+  }
+
   try {
-    const output = execFileSync('git', ['-C', rootDir, 'log', '-1', '--format=%cI', '--', relativePath], {
+    const output = execFileSync('git', ['-C', rootDir, 'log', '--format=__COMMIT__%cI', '--name-only', '--', ...uniquePaths], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    });
+    const dates = new Map();
+    let commitDate;
 
-    return output ? new Date(output) : undefined;
+    for (const line of output.split(/\r?\n/)) {
+      if (line.startsWith('__COMMIT__')) {
+        commitDate = new Date(line.slice('__COMMIT__'.length));
+        continue;
+      }
+
+      const filePath = slash(line.trim());
+
+      if (commitDate && filePath && !dates.has(filePath)) {
+        dates.set(filePath, commitDate);
+      }
+    }
+
+    return dates;
   } catch {
-    return undefined;
+    return new Map();
   }
 }
 
@@ -349,36 +361,6 @@ function getAssetPath(src) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
 }
 
-function inlineStylesheets(html) {
-  return html.replace(/<link\s+rel="stylesheet"\s+[^>]*href="([^"]+)"[^>]*>/g, (tag, href) => {
-    const filePath = getDistAssetPath(href);
-
-    if (!filePath || !fs.existsSync(filePath)) {
-      return tag;
-    }
-
-    return `<style>\n${fs.readFileSync(filePath, 'utf8')}\n</style>`;
-  });
-}
-
-function getDistAssetPath(href) {
-  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(href)) {
-    return undefined;
-  }
-
-  const withoutQuery = href.split(/[?#]/)[0];
-  const relativePath = withoutQuery.startsWith(basePath)
-    ? withoutQuery.slice(basePath.length)
-    : withoutQuery.replace(/^\//, '');
-
-  if (!relativePath.startsWith('assets/')) {
-    return undefined;
-  }
-
-  return path.join(distDir, ...relativePath.split('/'));
-}
-
-
 function toAbsoluteUrl(urlPath) {
   if (urlPath === '/') {
     return siteUrl;
@@ -391,14 +373,6 @@ function toAbsoluteUrl(urlPath) {
   return new URL(relativePath, siteUrl).toString();
 }
 
-function normalizeBasePath(value) {
-  if (!value || value === './') {
-    return '/';
-  }
-
-  return `/${value.replace(/^\/+|\/+$/g, '')}/`;
-}
-
 function normalizeSiteUrl(value) {
   return `${value.replace(/\/+$/g, '')}/`;
 }
@@ -409,4 +383,8 @@ function isTruthyEnv(value) {
 
 function escapeXml(value) {
   return escapeHtml(value).replace(/&#039;/g, '&apos;');
+}
+
+function slash(value) {
+  return value.replace(/\\/g, '/');
 }

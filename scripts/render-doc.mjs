@@ -2,15 +2,12 @@ import MarkdownIt from 'markdown-it';
 import {
   highlightCode,
   slugifyHeading,
-  parseAdmonishInfo,
   getDefaultCalloutTitle,
   isLocalAssetSrc,
   isThemeAssetSrc,
   normalizeThemeAssetSrc,
   escapeHtml,
 } from './markdown-shared.mjs';
-
-let activeBasePath = '/';
 
 const md = new MarkdownIt({
   html: false,
@@ -20,8 +17,10 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 const defaultImageRule = md.renderer.rules.image;
+const alertTypes = new Set(['note', 'tip', 'important', 'warning', 'caution']);
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
+md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
 
 (['th_open', 'td_open']).forEach((ruleName) => {
   const defaultRule = md.renderer.rules[ruleName];
@@ -49,10 +48,10 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetPath(src));
+      token.attrSet('src', getAssetPath(src, env.basePath));
 
       if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(src)));
+        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(src), env.basePath));
       }
     }
   }
@@ -64,30 +63,16 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
 
 md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index];
-  const callout = parseAdmonishInfo(token.info);
-
-  if (!callout) {
-    return renderFenceCode(token);
-  }
-
-  const title = callout.title || getDefaultCalloutTitle(callout.kind);
-  const body = md.render(token.content, env);
-
-  return [
-    `<aside class="doc-callout doc-callout-${escapeHtml(callout.kind)}" role="note">`,
-    `<p class="doc-callout-title">${escapeHtml(title)}</p>`,
-    `<div class="doc-callout-body">${body}</div>`,
-    '</aside>',
-  ].join('');
+  return renderFenceCode(token);
 };
 
 export function renderDocContent(content, lang, options = {}) {
-  activeBasePath = options.basePath || '/';
-  const tokens = md.parse(content, {});
+  const env = { basePath: options.basePath || '/', lang };
+  const tokens = md.parse(content, env);
   const toc = applyHeadingIds(tokens, lang);
 
   return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, {})),
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath),
     toc,
   };
 }
@@ -249,28 +234,142 @@ function applyHeadingIds(tokens, lang) {
   return roots;
 }
 
-function rewriteDocLinks(html) {
-  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (_match, link) => {
+function rewriteDocLinks(html, basePath) {
+  return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (match, link) => {
+    if (!isLocalAssetSrc(link)) {
+      return match;
+    }
+
     const [linkPath, hash = ''] = link.split('#');
     const normalized = linkPath
       .replace(/^\.\//, '')
-      .replace(/^docs\//, '')
+      .replace(/^\/?docs\//, '')
       .replace(/^(ru|en)\//, '')
       .replace(/\.md$/i, '');
 
-    return `href="${getDocPath(normalized)}${hash ? `#${hash}` : ''}"`;
+    return `href="${getDocPath(normalized, basePath)}${hash ? `#${hash}` : ''}"`;
   });
 }
 
-function getDocPath(id) {
+function applyGithubAlerts(state) {
+  const tokens = state.tokens;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'blockquote_open') {
+      continue;
+    }
+
+    const closeIndex = findClosingToken(tokens, index, 'blockquote_close');
+    if (closeIndex === -1) {
+      continue;
+    }
+
+    const inlineIndex = findFirstInlineToken(tokens, index, closeIndex);
+    if (inlineIndex === -1) {
+      index = closeIndex;
+      continue;
+    }
+
+    const alertType = stripGithubAlertMarker(tokens[inlineIndex]);
+    if (!alertType) {
+      index = closeIndex;
+      continue;
+    }
+
+    token.type = 'html_block';
+    token.tag = '';
+    token.nesting = 0;
+    token.content = [
+      `<aside class="doc-callout doc-callout-${alertType}" role="note">`,
+      `<p class="doc-callout-title">${escapeHtml(getDefaultCalloutTitle(alertType, state.env.lang))}</p>`,
+      '<div class="doc-callout-body">',
+      '',
+    ].join('\n');
+
+    const closeToken = tokens[closeIndex];
+    closeToken.type = 'html_block';
+    closeToken.tag = '';
+    closeToken.nesting = 0;
+    closeToken.content = '</div>\n</aside>\n';
+
+    index = closeIndex;
+  }
+}
+
+function findFirstInlineToken(tokens, start, end) {
+  for (let index = start + 1; index < end; index += 1) {
+    if (tokens[index].type === 'inline') {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function stripGithubAlertMarker(token) {
+  const match = token.content.match(/^\[!(note|tip|important|warning|caution)](?:[ \t]*\n[ \t]*|[ \t]+|$)/i);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const alertType = match[1].toLowerCase();
+  if (!alertTypes.has(alertType)) {
+    return undefined;
+  }
+
+  token.content = token.content.slice(match[0].length);
+
+  if (!token.children) {
+    return alertType;
+  }
+
+  let remaining = match[0].length;
+  const children = [];
+
+  token.children.forEach((child) => {
+    if (remaining <= 0) {
+      children.push(child);
+      return;
+    }
+
+    if (child.type === 'softbreak' || child.type === 'hardbreak') {
+      remaining -= 1;
+      return;
+    }
+
+    if (child.type !== 'text') {
+      return;
+    }
+
+    if (remaining >= child.content.length) {
+      remaining -= child.content.length;
+      return;
+    }
+
+    child.content = child.content.slice(remaining);
+    remaining = 0;
+
+    if (child.content) {
+      children.push(child);
+    }
+  });
+
+  token.children = children;
+  return alertType;
+}
+
+function getDocPath(id, basePath) {
   if (id === 'index') {
-    return activeBasePath;
+    return basePath;
   }
 
   const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return encodedId ? `${activeBasePath}${encodedId}/` : activeBasePath;
+  return encodedId ? `${basePath}${encodedId}/` : basePath;
 }
 
-function getAssetPath(src) {
-  return `${activeBasePath}${src.replace(/^\.?\//, '')}`;
+function getAssetPath(src, basePath) {
+  return `${basePath}${src.replace(/^\.?\//, '')}`;
 }

@@ -2,9 +2,8 @@
 
 This page describes the basic VSCode/VSCodium setup for working with game files.
 
-```admonish warning
-Not all game files can be fully opened in VSCode/VSCodium. For example, models, textures, animations, and videos often require separate programs or extensions.
-```
+> [!IMPORTANT]
+> Not all game files can be fully opened in VSCode/VSCodium. For example, models, textures, animations, and videos often require separate programs or extensions.
 
 ## File Associations
 

@@ -2,7 +2,7 @@ import themeAssetManifest from './generated/theme-assets.json';
 import type { AppContext } from './app-context';
 import { stripBasePath } from './routing';
 import type { Theme, ThemePreference } from './state';
-import { unique } from './utils/html';
+import { splitAssetSrc, unique } from './utils/html';
 
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
 const themeAssetPaths = new Set((themeAssetManifest as string[]).map(normalizeAssetManifestPath));
@@ -78,15 +78,6 @@ function createThemeAssetSrc(baseSrc: string, theme: Theme): string {
   }
 
   return `${path.replace(extension, `.${theme}.$1`)}${suffix}`;
-}
-
-function splitAssetSrc(src: string): { path: string; suffix: string } {
-  const match = src.match(/^([^?#]+)([?#].*)?$/);
-
-  return {
-    path: match?.[1] || src,
-    suffix: match?.[2] || '',
-  };
 }
 
 function assetExists(src: string): boolean {

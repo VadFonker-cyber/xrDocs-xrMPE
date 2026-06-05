@@ -17,6 +17,7 @@ export function readContentModel(docsDir) {
   return { docs, nav, navEntries };
 }
 
+// Keep in sync with src/docs.ts for client-side ordering.
 export function compareDocs(a, b) {
   if (a.lang !== b.lang) {
     return a.lang.localeCompare(b.lang);

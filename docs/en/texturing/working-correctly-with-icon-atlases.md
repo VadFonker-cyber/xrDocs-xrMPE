@@ -25,9 +25,8 @@ After saving, open the atlas in Photoshop. Enable the grid with `Ctrl+'`; the gr
 
 ![Grid preferences](./assets/texturing/icon-atlases/preferences.png)
 
-```admonish warning title="Important!"
-Do not use the rightmost and bottommost atlas cells: they are incomplete and a few pixels smaller than the others.
-```
+> [!IMPORTANT]
+> Do not use the rightmost and bottommost atlas cells: they are incomplete and a few pixels smaller than the others.
 
 Select the icon together with its color and alpha channel. Adjust the icon inside the cell if needed, then save the file.
 
@@ -37,9 +36,8 @@ To move an icon from one atlas to another, select it in the first atlas, copy it
 
 Open the layers panel and unlock the layer. The properties panel will then show the selected area's position and size.
 
-```admonish warning title="Important!"
-In Photoshop CS5/CS6, coordinates are available with `F8`; in newer versions they are shown in the properties panel.
-```
+> [!TIP]
+> In Photoshop CS5/CS6, coordinates are available with `F8`; in newer versions they are shown in the properties panel.
 
 ![Selected area properties](./assets/texturing/icon-atlases/properties.png)
 
@@ -47,9 +45,8 @@ For example, if the `X` position is `950` and the atlas cell size is `50`, divid
 
 If width `W` is `50`, divide it by `50` to get `inv_grid_width = 1`. Height is calculated the same way. For atlases with `100x100` icons, coordinates and sizes usually only require dropping two zeroes from the value.
 
-```admonish warning title="Important!"
-After unlocking the layer, do not save the atlas. Just close the file.
-```
+> [!WARNING]
+> After unlocking the layer, do not save the atlas. Just close the file.
 
 ## Save the DDS
 

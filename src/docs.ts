@@ -49,6 +49,7 @@ for (const doc of docs) {
   _docByKey.set(`${doc.lang}:${doc.id}`, doc);
 }
 
+// Keep in sync with scripts/content-model.mjs for generated manifest ordering.
 export function compareDocs(a: Doc, b: Doc): number {
   if (a.lang !== b.lang) {
     return a.lang.localeCompare(b.lang);

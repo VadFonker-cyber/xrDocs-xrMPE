@@ -50,24 +50,24 @@ export function readRouteFromPath(pathname: string, lang: Lang = readSavedLang()
   };
 }
 
-export function getDocUrl(id: string): string {
+export function getDocUrl(id: string, basePathOverride = basePath): string {
   if (id === 'index') {
-    return basePath;
+    return basePathOverride;
   }
 
   const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return encodedId ? `${basePath}${encodedId}/` : basePath;
+  return encodedId ? `${basePathOverride}${encodedId}/` : basePathOverride;
 }
 
-export function getAssetUrl(src: string): string {
+export function getAssetUrl(src: string, basePathOverride = basePath): string {
   if (!isLocalAssetSrc(src)) {
     return src;
   }
 
-  return `${basePath}${src.replace(/^\.?\//, '')}`;
+  return `${basePathOverride}${src.replace(/^\.?\//, '')}`;
 }
 
-function isLocalAssetSrc(src: string): boolean {
+export function isLocalAssetSrc(src: string): boolean {
   return !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src);
 }
 

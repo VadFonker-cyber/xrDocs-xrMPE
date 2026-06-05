@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
+import { normalizeBasePath } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
@@ -72,7 +73,7 @@ function listPublicFiles(dir) {
 
 function stripMarkdown(value) {
   return value
-    .replace(/```admonish[^\n]*\n([\s\S]*?)```/gi, '$1')
+    .replace(/^>\s*\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)]\s*$/gim, ' ')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
@@ -90,10 +91,3 @@ function getRenderedDocOutputPath(docContentDir, doc) {
   return path.join(docContentDir, doc.lang, ...doc.id.split('/'), 'index.json');
 }
 
-function normalizeBasePath(value) {
-  if (!value || value === './') {
-    return '/';
-  }
-
-  return `/${value.replace(/^\/+|\/+$/g, '')}/`;
-}

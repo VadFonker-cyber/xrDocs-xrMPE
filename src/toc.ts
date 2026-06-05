@@ -10,6 +10,7 @@ let headingObserverFrame: number | undefined;
 let currentTocItems: TocItem[] = [];
 // Cached flat item map — invalidated when the document changes
 let tocItemById: Map<string, TocItem> | undefined;
+let cachedCollapsibleIds: string[] | undefined;
 
 // Cached DOM references — valid for the lifetime of the shell
 type TocRefs = {
@@ -51,6 +52,7 @@ export function getCurrentTocItems(): TocItem[] {
 export function setCurrentTocItems(items: TocItem[]): void {
   currentTocItems = items;
   tocItemById = undefined;
+  cachedCollapsibleIds = undefined;
 }
 
 export function resetTocState(context: AppContext): void {
@@ -58,6 +60,8 @@ export function resetTocState(context: AppContext): void {
   context.state.tocCollapsedIds = new Set<string>();
   context.state.activeHeadingId = '';
   currentTocItems = [];
+  tocItemById = undefined;
+  cachedCollapsibleIds = undefined;
   headingObserver?.disconnect();
   cancelScheduledHeadingObserver();
 }
@@ -133,7 +137,7 @@ export function renderToc(context: AppContext): void {
 
   const query = context.state.tocQuery.trim();
   const visibleItems = query ? filterTocItems(currentTocItems, query, context.state.lang) : currentTocItems;
-  const collapsibleIds = getCollapsibleTocIds(currentTocItems);
+  const collapsibleIds = cachedCollapsibleIds ??= getCollapsibleTocIds(currentTocItems);
   const allCollapsed = collapsibleIds.length > 0 && collapsibleIds.every((id) => context.state.tocCollapsedIds.has(id));
 
   collapseToggle.hidden = false;
@@ -356,13 +360,11 @@ function updateActiveTocLink(context: AppContext): void {
     return;
   }
 
-  nav.querySelectorAll<HTMLAnchorElement>('a.toc-link[aria-current="true"]').forEach((link) => {
-    link.removeAttribute('aria-current');
-  });
-
   nav.querySelectorAll<HTMLAnchorElement>('a.toc-link').forEach((link) => {
     if (link.dataset.headingId === context.state.activeHeadingId) {
       link.setAttribute('aria-current', 'true');
+    } else {
+      link.removeAttribute('aria-current');
     }
   });
 }

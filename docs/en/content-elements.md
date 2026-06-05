@@ -35,6 +35,25 @@ Column alignment is controlled by the separator row: `:---` aligns left, `:---:`
 
 ![Example image 2](./assets/examples/xrdocs-icon.png)
 
+## GitHub Alerts
+
+> [!NOTE]
+> Use a note for extra context that helps readers understand the material.
+
+> [!TIP]
+> Use a tip for a practical technique or a more convenient way to perform an action.
+
+> [!IMPORTANT]
+> Use an important block for information required to complete the next step correctly.
+
+> [!WARNING]
+> Use a warning for conditions where a mistake can damage the result or require rework.
+
+> [!CAUTION]
+> Use caution for actions with a high risk of data loss or project breakage.
+
+> This is a regular quote without an alert marker. It should remain a standard `blockquote`.
+
 ## XML Example
 
 ```xml
