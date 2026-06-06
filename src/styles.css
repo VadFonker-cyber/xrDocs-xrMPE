@@ -31,25 +31,25 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #ffffff;
-  --grid: rgba(0, 0, 0, 0.06);
-  --surface: rgba(246, 246, 246, 0.96);
+  --bg: #f7f7f5;
+  --grid: rgba(36, 38, 40, 0.035);
+  --surface: rgba(250, 250, 248, 0.96);
   --surface-strong: #ffffff;
-  --surface-soft: rgba(0, 0, 0, 0.045);
-  --text: #151515;
-  --heading: #000000;
-  --muted: #626262;
-  --border: rgba(0, 0, 0, 0.14);
-  --border-strong: rgba(0, 0, 0, 0.3);
-  --nav-divider: rgba(75, 91, 132, 0.22);
-  --accent: #2f2f2f;
-  --accent-text: #000000;
-  --accent-soft: rgba(0, 0, 0, 0.08);
-  --code-bg: #f4f4f4;
-  --code-text: #171717;
-  --mark-bg: rgba(0, 0, 0, 0.14);
+  --surface-soft: rgba(28, 30, 32, 0.045);
+  --text: #242424;
+  --heading: #111111;
+  --muted: #6f6d68;
+  --border: rgba(24, 26, 28, 0.11);
+  --border-strong: rgba(24, 26, 28, 0.24);
+  --nav-divider: rgba(90, 98, 120, 0.16);
+  --accent: #353535;
+  --accent-text: #101010;
+  --accent-soft: rgba(24, 26, 28, 0.065);
+  --code-bg: #e6e8eb;
+  --code-text: #111827;
+  --mark-bg: rgba(36, 38, 40, 0.12);
   --mark-text: #000000;
-  --shadow-line: rgba(0, 0, 0, 0.2);
+  --shadow-line: rgba(24, 26, 28, 0.15);
   background: var(--bg);
   color: var(--text);
 }
@@ -887,14 +887,14 @@ h1 {
 :root[data-theme="light"] .hljs-built_in,
 :root[data-theme="light"] .hljs-name,
 :root[data-theme="light"] .hljs-tag {
-  color: #3d4e68;
+  color: #233d63;
 }
 
 :root[data-theme="light"] .hljs-number,
 :root[data-theme="light"] .hljs-literal,
 :root[data-theme="light"] .hljs-symbol,
 :root[data-theme="light"] .hljs-bullet {
-  color: #624b70;
+  color: #53306f;
 }
 
 :root[data-theme="light"] .hljs-string,
@@ -902,43 +902,43 @@ h1 {
 :root[data-theme="light"] .hljs-section,
 :root[data-theme="light"] .hljs-attr,
 :root[data-theme="light"] .hljs-attribute {
-  color: #665326;
+  color: #305f45;
 }
 
 :root[data-theme="light"] .hljs-comment,
 :root[data-theme="light"] .hljs-quote {
-  color: #757575;
+  color: #5f6670;
 }
 
 :root[data-theme="light"] .hljs-meta,
 :root[data-theme="light"] .hljs-doctag,
 :root[data-theme="light"] .hljs-variable,
 :root[data-theme="light"] .hljs-template-variable {
-  color: #684a3d;
+  color: #6a3b52;
 }
 
 :root[data-theme="light"] .hljs-type,
 :root[data-theme="light"] .hljs-class .hljs-title,
 :root[data-theme="light"] .hljs-function .hljs-title {
-  color: #3f5f45;
+  color: #245a3a;
 }
 
 :root[data-theme="light"] .hljs-regexp,
 :root[data-theme="light"] .hljs-link {
-  color: #684a40;
+  color: #1f5f74;
 }
 
 :root[data-theme="light"] .hljs-operator,
 :root[data-theme="light"] .hljs-punctuation {
-  color: #555555;
+  color: #45433f;
 }
 
 :root[data-theme="light"] .hljs-deletion {
-  color: #7a3d3d;
+  color: #71312e;
 }
 
 :root[data-theme="light"] .hljs-addition {
-  color: #456545;
+  color: #3a6138;
 }
 
 .doc-article blockquote {
@@ -978,23 +978,23 @@ h1 {
 }
 
 :root[data-theme="light"] .doc-callout-note {
-  --callout-accent: #4f6f99;
+  --callout-accent: #5b789c;
 }
 
 :root[data-theme="light"] .doc-callout-tip {
-  --callout-accent: #4f7f52;
+  --callout-accent: #5b875a;
 }
 
 :root[data-theme="light"] .doc-callout-important {
-  --callout-accent: #715a91;
+  --callout-accent: #7a6498;
 }
 
 :root[data-theme="light"] .doc-callout-warning {
-  --callout-accent: #946f16;
+  --callout-accent: #9d7924;
 }
 
 :root[data-theme="light"] .doc-callout-caution {
-  --callout-accent: #9a493f;
+  --callout-accent: #a4544a;
 }
 
 .doc-callout-title {
