@@ -19,6 +19,7 @@ type RenderEnv = {
 };
 
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
+const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
 const alertTypes = ['note', 'tip', 'important', 'warning', 'caution'] as const;
 
 type AlertType = (typeof alertTypes)[number];
@@ -62,10 +63,11 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetUrl(src, renderEnv.basePath));
+      const assetSrc = preferAvifAssetSrc(src);
+      token.attrSet('src', getAssetUrl(assetSrc, renderEnv.basePath));
 
-      if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src), renderEnv.basePath));
+      if (isThemeAssetSrc(assetSrc)) {
+        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(assetSrc), renderEnv.basePath));
       }
     }
   }
@@ -398,4 +400,14 @@ function normalizeThemeAssetSrc(src: string): string {
   const themedSuffix = new RegExp(`\\.(dark|light)(\\.(${themeAssetExtensions}))$`, 'i');
 
   return `${path.replace(themedSuffix, '$2')}${suffix}`;
+}
+
+function preferAvifAssetSrc(src: string): string {
+  const { path, suffix } = splitAssetSrc(src);
+
+  if (!avifConvertibleAsset.test(path)) {
+    return src;
+  }
+
+  return `${path.replace(avifConvertibleAsset, '.avif')}${suffix}`;
 }

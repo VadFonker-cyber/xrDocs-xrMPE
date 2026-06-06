@@ -51,6 +51,16 @@ jobs:
         working-directory: production
         run: npm ci
 
+      - name: Restore optimized production image assets
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            production/public/**/*.avif
+            production/public/.asset-cache.json
+          key: optimized-assets-production-${{ runner.os }}-${{ hashFiles('production/package-lock.json', 'production/scripts/optimize-assets.mjs', 'production/scripts/assets/xrdocs-icon.png', 'production/public/**/*.png', 'production/public/**/*.jpg', 'production/public/**/*.jpeg', 'production/public/**/*.webp') }}
+          restore-keys: |
+            optimized-assets-production-${{ runner.os }}-
+
       - name: Build production
         working-directory: production
         env:
@@ -64,6 +74,17 @@ jobs:
         if: inputs.action == 'deploy'
         working-directory: develop
         run: npm ci
+
+      - name: Restore optimized develop image assets
+        if: inputs.action == 'deploy'
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            develop/public/**/*.avif
+            develop/public/.asset-cache.json
+          key: optimized-assets-develop-${{ runner.os }}-${{ hashFiles('develop/package-lock.json', 'develop/scripts/optimize-assets.mjs', 'develop/scripts/assets/xrdocs-icon.png', 'develop/public/**/*.png', 'develop/public/**/*.jpg', 'develop/public/**/*.jpeg', 'develop/public/**/*.webp') }}
+          restore-keys: |
+            optimized-assets-develop-${{ runner.os }}-
 
       - name: Build develop
         if: inputs.action == 'deploy'

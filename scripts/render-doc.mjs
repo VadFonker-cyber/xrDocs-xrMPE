@@ -6,6 +6,7 @@ import {
   isLocalAssetSrc,
   isThemeAssetSrc,
   normalizeThemeAssetSrc,
+  splitAssetSrc,
   escapeHtml,
 } from './markdown-shared.mjs';
 
@@ -18,6 +19,7 @@ const md = new MarkdownIt({
 });
 const defaultImageRule = md.renderer.rules.image;
 const alertTypes = new Set(['note', 'tip', 'important', 'warning', 'caution']);
+const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
@@ -48,10 +50,11 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetPath(src, env.basePath));
+      const assetSrc = preferAvifAssetSrc(src);
+      token.attrSet('src', getAssetPath(assetSrc, env.basePath));
 
-      if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(src), env.basePath));
+      if (isThemeAssetSrc(assetSrc)) {
+        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(assetSrc), env.basePath));
       }
     }
   }
@@ -369,4 +372,14 @@ function getDocPath(id, basePath) {
 
 function getAssetPath(src, basePath) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
+}
+
+function preferAvifAssetSrc(src) {
+  const { path, suffix } = splitAssetSrc(src);
+
+  if (!avifConvertibleAsset.test(path)) {
+    return src;
+  }
+
+  return `${path.replace(avifConvertibleAsset, '.avif')}${suffix}`;
 }

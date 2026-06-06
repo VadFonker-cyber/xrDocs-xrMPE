@@ -46,6 +46,16 @@ jobs:
       - name: Install production dependencies
         run: npm ci
 
+      - name: Restore optimized production image assets
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            public/**/*.avif
+            public/.asset-cache.json
+          key: optimized-assets-production-${{ runner.os }}-${{ hashFiles('package-lock.json', 'scripts/optimize-assets.mjs', 'scripts/assets/xrdocs-icon.png', 'public/**/*.png', 'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp') }}
+          restore-keys: |
+            optimized-assets-production-${{ runner.os }}-
+
       - name: Build production
         env:
           SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/
