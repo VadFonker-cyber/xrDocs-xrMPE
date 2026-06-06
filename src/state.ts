@@ -50,7 +50,13 @@ export function readTheme(): ThemePreference {
 }
 
 export function readTocOpen(): boolean {
-  return localStorage.getItem('xrDocsTocOpen') === 'true';
+  const savedTocOpen = localStorage.getItem('xrDocsTocOpen');
+
+  if (savedTocOpen === 'true' || savedTocOpen === 'false') {
+    return savedTocOpen === 'true';
+  }
+
+  return false;
 }
 
 export function readTocWidth(): number {
