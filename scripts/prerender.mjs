@@ -6,7 +6,7 @@ import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
-import { normalizeBasePath } from './shared-utils.mjs';
+import { findNodePath, getNavNodeKey, normalizeBasePath } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(rootDir, 'docs');
@@ -148,7 +148,11 @@ function renderStaticNavNodes(nodes, activeDoc, activeAncestorKeys) {
   return `<ul class="nav-list">${nodes.map((node) => renderStaticNavNode(node, activeDoc, activeAncestorKeys)).join('')}</ul>`;
 }
 
-// Client markup in src/nav.ts mirrors this static structure.
+// SYNC CONTRACT: this function must produce the same HTML structure as
+// renderNavNode() in src/nav.ts. Differences allowed:
+//   - no data-nav-id click handling (static HTML has no JS at render time)
+//   - expanded is derived only from ancestor path, not navExpandedIds
+// If you change the HTML here, update src/nav.ts accordingly, and vice versa.
 function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
   const key = getNavNodeKey(node);
   const hasChildren = node.children.length > 0;
@@ -187,26 +191,6 @@ function findNavNodePath(lang, id) {
   }
 
   return [];
-}
-
-function findNodePath(nodes, id) {
-  for (const node of nodes) {
-    if (node.id === id) {
-      return [node];
-    }
-
-    const childPath = findNodePath(node.children, id);
-
-    if (childPath.length) {
-      return [node, ...childPath];
-    }
-  }
-
-  return [];
-}
-
-function getNavNodeKey(node) {
-  return node.id || `${node.depth}:${node.order}:${node.title}`;
 }
 
 function writeSitemap(pages) {

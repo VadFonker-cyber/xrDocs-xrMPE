@@ -1,11 +1,11 @@
 import type { AppContext } from './app-context';
 import { getDocCacheKey } from './article';
-import { labels } from './locales';
+import { getLabel, labels } from './locales';
 import { getAssetUrl, navigateToLink } from './routing';
 import { loadSearchIndex } from './search';
 import { getNextThemePreference, getResolvedTheme } from './theme';
 import { getTocTitle, setActiveHeading, startTocResize } from './toc';
-import { escapeHtml, getLabel } from './utils/html';
+import { escapeHtml } from './utils/html';
 import type { Doc } from './docs';
 import type { ThemePreference } from './state';
 

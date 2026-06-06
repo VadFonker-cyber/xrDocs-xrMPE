@@ -1,6 +1,3 @@
-import { labels, type LabelKey } from '../locales';
-import type { Lang } from '../docs';
-
 export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -29,8 +26,4 @@ export function clamp(value: number, min: number, max: number): number {
 
 export function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-export function getLabel(lang: Lang, key: LabelKey): string {
-  return labels[lang][key] || labels.en[key] || key;
 }

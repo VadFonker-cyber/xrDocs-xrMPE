@@ -1,8 +1,9 @@
 import type { AppContext } from './app-context';
 import { compareDocs, getDocByKey, type Doc, type Lang } from './docs';
+import { getLabel } from './locales';
 import { getAssetUrl, getDocUrl } from './routing';
 import { collectEvent } from './statistics';
-import { escapeHtml, escapeRegExp, getLabel } from './utils/html';
+import { escapeHtml, escapeRegExp } from './utils/html';
 
 type SearchResult = {
   doc: Doc;

@@ -4,33 +4,7 @@
  * in src/markdown-renderer.ts.
  */
 
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import dos from 'highlight.js/lib/languages/dos';
-import ini from 'highlight.js/lib/languages/ini';
-import json from 'highlight.js/lib/languages/json';
-import markdown from 'highlight.js/lib/languages/markdown';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import powershell from 'highlight.js/lib/languages/powershell';
-import xml from 'highlight.js/lib/languages/xml';
-
-hljs.registerLanguage('ini', ini);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('bat', dos);
-hljs.registerLanguage('batch', dos);
-hljs.registerLanguage('cmd', dos);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('powershell', powershell);
-hljs.registerLanguage('ps1', powershell);
-hljs.registerLanguage('pwsh', powershell);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('text', plaintext);
-hljs.registerLanguage('plaintext', plaintext);
-hljs.registerLanguage('xml', xml);
-
-export { hljs };
+import { hljs } from './hljs-setup.mjs';
 
 export function highlightCode(source, language) {
   const lang = language.trim().toLowerCase();
@@ -56,29 +30,33 @@ export function slugifyHeading(value, lang) {
     .replace(/-{2,}/g, '-');
 }
 
-const defaultCalloutTitles = {
-  en: {
-    note: 'Note',
-    tip: 'Tip',
-    important: 'Important',
-    warning: 'Warning',
-    caution: 'Caution',
-  },
-  ru: {
-    note: 'Примечание',
-    tip: 'Совет',
-    important: 'Важно',
-    warning: 'Предупреждение',
-    caution: 'Осторожно',
-  },
-};
+/**
+ * Generates a deduplicated heading ID for a given title.
+ * @param {Map<string, number>} slugCounts - mutable counter Map shared across a single document render pass
+ */
+export function generateHeadingId(title, lang, slugCounts) {
+  const baseSlug = slugifyHeading(title, lang) || 'heading';
+  const count = (slugCounts.get(baseSlug) || 0) + 1;
+  slugCounts.set(baseSlug, count);
+  return count === 1 ? baseSlug : `${baseSlug}-${count}`;
+}
 
-export function getDefaultCalloutTitle(kind, langOrLabels = 'ru') {
-  if (typeof langOrLabels === 'object' && langOrLabels) {
-    return langOrLabels[kind] || kind;
-  }
+import { createRequire } from 'node:module';
 
-  return defaultCalloutTitles[langOrLabels]?.[kind] || kind;
+// Callout titles come from the same locale JSON files used by the browser bundle.
+// src/locales/{lang}.json is the single source of truth — do not duplicate here.
+const _require = createRequire(import.meta.url);
+const _calloutTitles = Object.fromEntries(
+  ['en', 'ru'].map((lang) => {
+    const labels = _require(`../src/locales/${lang}.json`);
+    return [lang, Object.fromEntries(
+      ['note', 'tip', 'important', 'warning', 'caution'].map((k) => [k, labels[`callout.${k}`] || k])
+    )];
+  })
+);
+
+export function getDefaultCalloutTitle(kind, lang) {
+  return _calloutTitles[lang]?.[kind] || kind;
 }
 
 export function isLocalAssetSrc(src) {

@@ -1,19 +1,13 @@
 import MarkdownIt from 'markdown-it';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 import type Token from 'markdown-it/lib/token.mjs';
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import dos from 'highlight.js/lib/languages/dos';
-import ini from 'highlight.js/lib/languages/ini';
-import json from 'highlight.js/lib/languages/json';
-import markdown from 'highlight.js/lib/languages/markdown';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import powershell from 'highlight.js/lib/languages/powershell';
-import xml from 'highlight.js/lib/languages/xml';
 import type { Lang } from './docs';
+import { hljs } from './hljs-setup';
+import { getLabel } from './locales';
 import { getAssetUrl, getDocUrl, isLocalAssetSrc } from './routing';
 import type { TocItem, RenderedDoc } from './types';
-import { escapeHtml, getLabel, splitAssetSrc } from './utils/html';
+import { escapeHtml, splitAssetSrc } from './utils/html';
+import { generateHeadingId } from './utils/markdown';
 
 type RenderOptions = {
   basePath: string;
@@ -36,22 +30,6 @@ const md = new MarkdownIt({
   langPrefix: 'language-',
   highlight: highlightCode,
 });
-
-hljs.registerLanguage('ini', ini);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('bat', dos);
-hljs.registerLanguage('batch', dos);
-hljs.registerLanguage('cmd', dos);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('powershell', powershell);
-hljs.registerLanguage('ps1', powershell);
-hljs.registerLanguage('pwsh', powershell);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('text', plaintext);
-hljs.registerLanguage('plaintext', plaintext);
-hljs.registerLanguage('xml', xml);
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
@@ -346,10 +324,7 @@ function createToc(tokens: Token[], lang: Lang): TocItem[] {
     const level = Number(token.tag.slice(1));
     const inline = tokens[index + 1];
     const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
-    slugCounts.set(baseSlug, count);
+    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
     token.attrSet('id', id);
 
     const item: TocItem = {
@@ -375,16 +350,6 @@ function createToc(tokens: Token[], lang: Lang): TocItem[] {
   }
 
   return roots;
-}
-
-function slugifyHeading(value: string, lang: Lang): string {
-  return value
-    .toLocaleLowerCase(lang)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
 }
 
 function highlightCode(source: string, language: string): string {

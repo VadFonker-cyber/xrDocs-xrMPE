@@ -15,7 +15,7 @@ import {
   setCurrentTocItems,
   setInitialActiveHeadingFromToc,
 } from './toc';
-import { getLabel } from './utils/html';
+import { getLabel } from './locales';
 import './styles.css';
 
 let lastCollectedPage = '';

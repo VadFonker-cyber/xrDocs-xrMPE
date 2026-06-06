@@ -2,7 +2,8 @@ import type { AppContext } from './app-context';
 import { findNavNodePath, navTree, type NavNode } from './docs';
 import { getDocUrl } from './routing';
 import { renderSearchResults } from './search';
-import { escapeHtml, getLabel } from './utils/html';
+import { getLabel } from './locales';
+import { escapeHtml } from './utils/html';
 
 let searchRenderRequest = 0;
 
@@ -59,7 +60,11 @@ function renderNavNodes(context: AppContext, nodes: NavNode[], activeAncestorKey
   `;
 }
 
-// Static prerender markup in scripts/prerender.mjs mirrors this structure.
+// SYNC CONTRACT: this function must produce the same HTML structure as
+// renderStaticNavNode() in scripts/prerender.mjs. Differences allowed:
+//   - data-nav-id button for client-side expand/collapse
+//   - expanded also considers context.state.navExpandedIds
+// If you change the HTML here, update scripts/prerender.mjs accordingly, and vice versa.
 function renderNavNode(context: AppContext, node: NavNode, activeAncestorKeys: Set<string>): string {
   const key = getNavNodeKey(node);
   const hasChildren = node.children.length > 0;

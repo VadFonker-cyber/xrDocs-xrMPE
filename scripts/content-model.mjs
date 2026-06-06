@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { compareDocs } from './shared-utils.mjs';
 
 export function readContentModel(docsDir) {
   const nav = {
@@ -15,23 +16,6 @@ export function readContentModel(docsDir) {
     .sort(compareDocs);
 
   return { docs, nav, navEntries };
-}
-
-// Keep in sync with src/docs.ts for client-side ordering.
-export function compareDocs(a, b) {
-  if (a.lang !== b.lang) {
-    return a.lang.localeCompare(b.lang);
-  }
-
-  if (a.order !== b.order) {
-    return a.order - b.order;
-  }
-
-  if (a.section !== b.section) {
-    return a.section.localeCompare(b.section, a.lang);
-  }
-
-  return a.title.localeCompare(b.title, a.lang);
 }
 
 function parseInit(docsDir, lang) {

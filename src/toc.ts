@@ -2,7 +2,8 @@ import type { AppContext } from './app-context';
 import type { TocItem } from './types';
 import type { Doc, Lang } from './docs';
 import { normalizeSearch } from './search';
-import { clamp, escapeHtml, getLabel } from './utils/html';
+import { getLabel } from './locales';
+import { clamp, escapeHtml } from './utils/html';
 import { maxTocWidth, minTocWidth } from './state';
 
 let headingObserver: IntersectionObserver | undefined;

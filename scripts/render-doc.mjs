@@ -1,7 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import {
   highlightCode,
-  slugifyHeading,
+  generateHeadingId,
   getDefaultCalloutTitle,
   isLocalAssetSrc,
   isThemeAssetSrc,
@@ -203,10 +203,7 @@ function applyHeadingIds(tokens, lang) {
     const level = Number(token.tag.slice(1));
     const inline = tokens[index + 1];
     const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
-    slugCounts.set(baseSlug, count);
+    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
     token.attrSet('id', id);
 
     const item = {
