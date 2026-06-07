@@ -15,12 +15,12 @@ export function getResolvedTheme(context: Pick<AppContext, 'state' | 'colorSchem
   return context.colorSchemeQuery.matches ? 'light' : 'dark';
 }
 
-export function getNextThemePreference(theme: ThemePreference): ThemePreference {
+export function getNextThemePreference(theme: ThemePreference, resolvedTheme: Theme): ThemePreference {
   if (theme === 'auto') {
-    return 'light';
+    return resolvedTheme === 'light' ? 'dark' : 'light';
   }
 
-  return theme === 'light' ? 'dark' : 'auto';
+  return theme === 'light' ? 'dark' : 'light';
 }
 
 export function updateThemeAssets(context: Pick<AppContext, 'state' | 'colorSchemeQuery'>, root: ParentNode): void {

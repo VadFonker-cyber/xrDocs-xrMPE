@@ -31,6 +31,6 @@
   "language.switchToEnglish": "Переключить на английский",
   "language.switchToRussian": "Переключить на русский",
   "theme.followSystem": "Следовать системной теме ({theme})",
-  "theme.switchToAuto": "Переключить на системную тему",
+  "theme.switchToLight": "Переключить на светлую тему",
   "theme.switchToDark": "Переключить на темную тему"
 }

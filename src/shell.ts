@@ -289,7 +289,7 @@ function bindShellEvents(context: AppContext): void {
   });
 
   document.querySelector<HTMLButtonElement>('#themeToggle')?.addEventListener('click', () => {
-    context.switchTheme(getNextThemePreference(context.state.theme));
+    context.switchTheme(getNextThemePreference(context.state.theme, getResolvedTheme(context)));
   });
 
   window.addEventListener('keydown', (event) => {
@@ -305,7 +305,7 @@ function getThemeToggleTitle(context: AppContext, theme: ThemePreference): strin
     return getLabel(context.state.lang, 'theme.followSystem').replace('{theme}', getResolvedTheme(context));
   }
 
-  return theme === 'dark' ? getLabel(context.state.lang, 'theme.switchToAuto') : getLabel(context.state.lang, 'theme.switchToDark');
+  return theme === 'dark' ? getLabel(context.state.lang, 'theme.switchToLight') : getLabel(context.state.lang, 'theme.switchToDark');
 }
 
 function getThemeIcon(theme: ThemePreference): string {

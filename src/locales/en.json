@@ -31,6 +31,6 @@
   "language.switchToEnglish": "Switch to English",
   "language.switchToRussian": "Switch to Russian",
   "theme.followSystem": "Follow system theme ({theme})",
-  "theme.switchToAuto": "Switch to automatic theme",
+  "theme.switchToLight": "Switch to light theme",
   "theme.switchToDark": "Switch to dark theme"
 }
