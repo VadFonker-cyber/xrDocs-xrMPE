@@ -46,6 +46,20 @@ function getOrInitTocRefs(): TocRefs | undefined {
   });
 }
 
+export function bindTocCollapseToggle(context: AppContext): void {
+  const collapseToggle = document.querySelector<HTMLButtonElement>('#tocCollapseToggle');
+  if (!collapseToggle) return;
+
+  collapseToggle.addEventListener('click', () => {
+    const allCollapsed = collapseToggle.dataset.allCollapsed === 'true';
+    const collapsibleIds = collapseToggle.dataset.collapsibleIds
+      ? collapseToggle.dataset.collapsibleIds.split(',').filter(Boolean)
+      : [];
+    context.state.tocCollapsedIds = allCollapsed ? new Set<string>() : new Set(collapsibleIds);
+    renderToc(context);
+  });
+}
+
 export function getCurrentTocItems(): TocItem[] {
   return currentTocItems;
 }
@@ -145,10 +159,8 @@ export function renderToc(context: AppContext): void {
   collapseToggle.innerHTML = getCollapseIcon(allCollapsed);
   collapseToggle.setAttribute('aria-label', getLabel(context.state.lang, allCollapsed ? 'toc.expandAll' : 'toc.collapseAll'));
   collapseToggle.setAttribute('title', getLabel(context.state.lang, allCollapsed ? 'toc.expandAll' : 'toc.collapseAll'));
-  collapseToggle.onclick = () => {
-    context.state.tocCollapsedIds = allCollapsed ? new Set<string>() : new Set(collapsibleIds);
-    renderToc(context);
-  };
+  collapseToggle.dataset.allCollapsed = String(allCollapsed);
+  collapseToggle.dataset.collapsibleIds = collapsibleIds.join(',');
 
   if (!visibleItems.length) {
     nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(context.state.lang, 'toc.noResults'))}</p>`;
@@ -157,6 +169,9 @@ export function renderToc(context: AppContext): void {
 
   nav.innerHTML = renderTocList(context, visibleItems, Boolean(query));
 }
+
+// Cached layout element — set on first use, valid for the lifetime of the shell
+let cachedLayoutEl: HTMLElement | null | undefined;
 
 export function startTocResize(context: AppContext, event: PointerEvent): void {
   if (event.button !== 0 || window.matchMedia('(max-width: 1100px)').matches) {
@@ -172,6 +187,7 @@ export function startTocResize(context: AppContext, event: PointerEvent): void {
 
   const stop = () => {
     document.documentElement.removeAttribute('data-toc-resizing');
+    localStorage.setItem('xrDocsTocWidth', String(context.state.tocWidth));
     window.removeEventListener('pointermove', resize);
     window.removeEventListener('pointerup', stop);
     window.removeEventListener('pointercancel', stop);
@@ -184,8 +200,10 @@ export function startTocResize(context: AppContext, event: PointerEvent): void {
 
 export function setTocWidth(context: AppContext, width: number): void {
   context.state.tocWidth = clamp(Math.round(width), minTocWidth, maxTocWidth);
-  document.querySelector<HTMLElement>('.layout')?.style.setProperty('--toc-width', `${context.state.tocWidth}px`);
-  localStorage.setItem('xrDocsTocWidth', String(context.state.tocWidth));
+  if (cachedLayoutEl === undefined) {
+    cachedLayoutEl = document.querySelector<HTMLElement>('.layout');
+  }
+  cachedLayoutEl?.style.setProperty('--toc-width', `${context.state.tocWidth}px`);
 }
 
 export function setActiveHeading(context: AppContext, id: string): void {

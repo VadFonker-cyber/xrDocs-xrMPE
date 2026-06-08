@@ -8,6 +8,7 @@ import { getAssetUrl, getDocUrl, isLocalAssetSrc } from './routing';
 import type { TocItem, RenderedDoc } from './types';
 import { escapeHtml, splitAssetSrc } from './utils/html';
 import { generateHeadingId } from './utils/markdown';
+import { buildTocTree } from './utils/toc-builder';
 
 type RenderOptions = {
   basePath: string;
@@ -200,11 +201,27 @@ function stripGithubAlertMarker(token: Token): AlertType | undefined {
 export function renderDocContent(content: string, lang: Lang, options: RenderOptions): RenderedDoc {
   const env: RenderEnv = { basePath: options.basePath, lang };
   const tokens = md.parse(content, env);
-  const toc = createToc(tokens, lang);
+  const slugCounts = new Map<string, number>();
+  const headings: Array<{ id: string; level: number; title: string }> = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'heading_open') {
+      continue;
+    }
+
+    const level = Number(token.tag.slice(1));
+    const inline = tokens[index + 1];
+    const title = inline?.type === 'inline' ? inline.content.trim() : '';
+    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
+    token.attrSet('id', id);
+    headings.push({ id, level, title: title || id });
+  }
 
   return {
     html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), options.basePath),
-    toc,
+    toc: buildTocTree(headings),
   };
 }
 
@@ -309,49 +326,6 @@ function findClosingToken(tokens: Token[], start: number, closingType: string): 
   }
 
   return -1;
-}
-
-function createToc(tokens: Token[], lang: Lang): TocItem[] {
-  const roots: TocItem[] = [];
-  const stack: TocItem[] = [];
-  const slugCounts = new Map<string, number>();
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-
-    if (token.type !== 'heading_open') {
-      continue;
-    }
-
-    const level = Number(token.tag.slice(1));
-    const inline = tokens[index + 1];
-    const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
-    token.attrSet('id', id);
-
-    const item: TocItem = {
-      id,
-      title: title || id,
-      level,
-      children: [],
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent) {
-      item.parentId = parent.id;
-      parent.children.push(item);
-    } else {
-      roots.push(item);
-    }
-
-    stack.push(item);
-  }
-
-  return roots;
 }
 
 function highlightCode(source: string, language: string): string {

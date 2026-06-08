@@ -82,15 +82,47 @@ export function normalizeThemeAssetSrc(src) {
   return `${assetPath.replace(/\.(dark|light)(\.(?:avif|gif|jpe?g|png|svg|webp))$/i, '$2')}${suffix}`;
 }
 
+const HTML_ESCAPES = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#039;',
+};
+
 export function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  return String(value).replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
 }
 
 export function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Builds a nested TOC tree from a flat sequence of heading descriptors.
+ * Shared by render-doc.mjs. The browser equivalent is src/utils/toc-builder.ts — keep in sync.
+ */
+export function buildTocTree(items) {
+  const roots = [];
+  const stack = [];
+
+  for (const { id, level, title } of items) {
+    const item = { id, title, level, children: [] };
+
+    while (stack.length && stack[stack.length - 1].level >= level) {
+      stack.pop();
+    }
+
+    const parent = stack[stack.length - 1];
+    if (parent) {
+      item.parentId = parent.id;
+      parent.children.push(item);
+    } else {
+      roots.push(item);
+    }
+
+    stack.push(item);
+  }
+
+  return roots;
 }

@@ -4,7 +4,7 @@ import { getLabel, labels } from './locales';
 import { getAssetUrl, navigateToLink } from './routing';
 import { loadSearchIndex } from './search';
 import { getNextThemePreference, getResolvedTheme } from './theme';
-import { getTocTitle, setActiveHeading, startTocResize } from './toc';
+import { getTocTitle, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
 import { escapeHtml } from './utils/html';
 import type { Doc } from './docs';
 import type { ThemePreference } from './state';
@@ -160,14 +160,18 @@ export function renderTopbarControls(context: AppContext, activeDoc: Doc): void 
 }
 
 function bindShellEvents(context: AppContext): void {
-  document.querySelector<HTMLInputElement>('#searchInput')?.addEventListener('input', (event) => {
+  const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
+
+  searchInput?.addEventListener('input', (event) => {
     context.state.search = (event.currentTarget as HTMLInputElement).value;
     context.renderNav();
   });
 
-  document.querySelector<HTMLInputElement>('#searchInput')?.addEventListener('focus', () => {
+  searchInput?.addEventListener('focus', () => {
     void loadSearchIndex();
   });
+
+  bindTocCollapseToggle(context);
 
   document.querySelector<HTMLElement>('#docNav')?.addEventListener('click', (event) => {
     const toggle = (event.target as Element | null)?.closest<HTMLButtonElement>('button.nav-item-toggle');

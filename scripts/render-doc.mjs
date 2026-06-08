@@ -8,6 +8,7 @@ import {
   normalizeThemeAssetSrc,
   splitAssetSrc,
   escapeHtml,
+  buildTocTree,
 } from './markdown-shared.mjs';
 
 const md = new MarkdownIt({
@@ -72,11 +73,27 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
 export function renderDocContent(content, lang, options = {}) {
   const env = { basePath: options.basePath || '/', lang };
   const tokens = md.parse(content, env);
-  const toc = applyHeadingIds(tokens, lang);
+  const slugCounts = new Map();
+  const headings = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'heading_open') {
+      continue;
+    }
+
+    const level = Number(token.tag.slice(1));
+    const inline = tokens[index + 1];
+    const title = inline?.type === 'inline' ? inline.content.trim() : '';
+    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
+    token.attrSet('id', id);
+    headings.push({ id, level, title: title || id });
+  }
 
   return {
     html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath),
-    toc,
+    toc: buildTocTree(headings),
   };
 }
 
@@ -189,49 +206,6 @@ function findClosingToken(tokens, start, closingType) {
   }
 
   return -1;
-}
-
-function applyHeadingIds(tokens, lang) {
-  const roots = [];
-  const stack = [];
-  const slugCounts = new Map();
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-
-    if (token.type !== 'heading_open') {
-      continue;
-    }
-
-    const level = Number(token.tag.slice(1));
-    const inline = tokens[index + 1];
-    const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
-    token.attrSet('id', id);
-
-    const item = {
-      id,
-      title: title || id,
-      level,
-      children: [],
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent) {
-      item.parentId = parent.id;
-      parent.children.push(item);
-    } else {
-      roots.push(item);
-    }
-
-    stack.push(item);
-  }
-
-  return roots;
 }
 
 function rewriteDocLinks(html, basePath) {

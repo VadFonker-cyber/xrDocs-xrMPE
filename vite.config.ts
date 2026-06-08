@@ -8,12 +8,14 @@ function docsContentReloadPlugin(): Plugin {
   let server: ViteDevServer;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingFile = '';
+  // Cache of known markdown module files — avoids scanning the entire module graph on every .md change
+  const rawMarkdownModuleFiles = new Set<string>();
 
-  const runGeneration = (reason: string, shouldReload: boolean) => {
+  const runGeneration = async (reason: string, shouldReload: boolean) => {
     try {
-      const result = generateContentData({ rootDir: server.config.root });
+      const result = await generateContentData({ rootDir: server.config.root });
       invalidateGeneratedModules(server);
-      invalidateRawMarkdownModules(server, pendingFile);
+      invalidateRawMarkdownModules(server, pendingFile, rawMarkdownModuleFiles);
 
       if (shouldReload) {
         server.ws.send({ type: 'full-reload' });
@@ -44,7 +46,7 @@ function docsContentReloadPlugin(): Plugin {
 
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
-      runGeneration(reason, true);
+      void runGeneration(reason, true);
     }, 120);
   };
 
@@ -58,11 +60,17 @@ function docsContentReloadPlugin(): Plugin {
         path.resolve(server.config.root, 'docs/en'),
       ]);
 
-      runGeneration('dev server start', false);
+      void runGeneration('dev server start', false);
 
       server.watcher.on('all', (event, file) => {
         if (!['add', 'change', 'unlink'].includes(event) || !markdownWatchPattern.test(file)) {
           return;
+        }
+
+        if (event === 'unlink') {
+          rawMarkdownModuleFiles.delete(file);
+        } else {
+          rawMarkdownModuleFiles.add(file);
         }
 
         scheduleGeneration(event, file);
@@ -84,15 +92,14 @@ function invalidateGeneratedModules(server: ViteDevServer) {
   }
 }
 
-function invalidateRawMarkdownModules(server: ViteDevServer, changedFile: string) {
+function invalidateRawMarkdownModules(server: ViteDevServer, changedFile: string, knownFiles: Set<string>) {
   if (changedFile) {
     invalidateFileModules(server, changedFile);
   }
 
-  for (const [file, modules] of server.moduleGraph.fileToModulesMap) {
-    if (!markdownWatchPattern.test(file)) {
-      continue;
-    }
+  for (const file of knownFiles) {
+    const modules = server.moduleGraph.getModulesByFile(file);
+    if (!modules) continue;
 
     for (const module of modules) {
       if (module.id?.includes('?raw')) {
