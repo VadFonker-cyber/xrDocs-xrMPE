@@ -3,6 +3,7 @@ import type { TocItem } from './types';
 import type { Doc, Lang } from './docs';
 import { normalizeSearch } from './search';
 import { getLabel } from './locales';
+import { resolveHeadingAlias } from './heading-aliases';
 import { clamp, escapeHtml } from './utils/html';
 import { maxTocWidth, minTocWidth } from './state';
 
@@ -12,6 +13,7 @@ let currentTocItems: TocItem[] = [];
 // Cached flat item map — invalidated when the document changes
 let tocItemById: Map<string, TocItem> | undefined;
 let cachedCollapsibleIds: string[] | undefined;
+const headingHighlightTimers = new WeakMap<HTMLElement, number>();
 
 // Cached DOM references — valid for the lifetime of the shell
 type TocRefs = {
@@ -219,6 +221,54 @@ export function setActiveHeading(context: AppContext, id: string): void {
   }
 }
 
+export function highlightHeading(heading: HTMLElement): void {
+  const currentTimer = headingHighlightTimers.get(heading);
+
+  if (currentTimer !== undefined) {
+    window.clearTimeout(currentTimer);
+  }
+
+  heading.classList.remove('heading-target-highlight');
+  void heading.offsetWidth;
+  heading.classList.add('heading-target-highlight');
+
+  headingHighlightTimers.set(
+    heading,
+    window.setTimeout(() => {
+      heading.classList.remove('heading-target-highlight');
+      headingHighlightTimers.delete(heading);
+    }, 2000),
+  );
+}
+
+export function highlightHashTarget(context: AppContext, scroll = false): boolean {
+  const rawHashId = decodeURIComponent(location.hash.replace(/^#/, ''));
+
+  if (!rawHashId) {
+    return false;
+  }
+
+  const hashId = resolveHeadingAlias(context.state.lang, context.state.activeId, rawHashId);
+  const target = document.getElementById(hashId);
+
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (hashId !== rawHashId) {
+    history.replaceState(null, '', `${location.pathname}${location.search}#${encodeURIComponent(hashId)}`);
+  }
+
+  setActiveHeading(context, hashId);
+
+  if (scroll) {
+    target.scrollIntoView({ block: 'start' });
+  }
+
+  highlightHeading(target);
+  return true;
+}
+
 export function getTocTitle(doc: Doc): string {
   const fileName = doc.id.split('/').filter(Boolean).at(-1) || doc.id || doc.title;
   return `${getLabel(doc.lang, 'toc.toggle')} ${fileName}`;
@@ -333,15 +383,27 @@ function observeArticleHeadings(context: AppContext, article: HTMLElement): void
     },
   );
 
-  headings.forEach((heading) => headingObserver?.observe(heading));
+  const rawHashId = decodeURIComponent(location.hash.replace(/^#/, ''));
+  const hashId = rawHashId ? resolveHeadingAlias(context.state.lang, context.state.activeId, rawHashId) : '';
+  const hashTarget = hashId ? headings.find((heading) => heading.id === hashId) : undefined;
 
-  const hashId = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (hashId && headings.some((heading) => heading.id === hashId)) {
+  if (hashTarget) {
+    if (hashId !== rawHashId) {
+      history.replaceState(null, '', `${location.pathname}${location.search}#${encodeURIComponent(hashId)}`);
+    }
+
     setActiveHeading(context, hashId);
-    window.setTimeout(() => document.getElementById(hashId)?.scrollIntoView({ block: 'start' }), 0);
-  } else {
-    setActiveHeading(context, headings[0].id);
+    window.setTimeout(() => {
+      hashTarget.scrollIntoView({ block: 'start' });
+      setActiveHeading(context, hashId);
+      highlightHeading(hashTarget);
+      headings.forEach((heading) => headingObserver?.observe(heading));
+    }, 0);
+    return;
   }
+
+  headings.forEach((heading) => headingObserver?.observe(heading));
+  setActiveHeading(context, headings[0].id);
 }
 
 function expandTocAncestors(context: AppContext, id: string): boolean {

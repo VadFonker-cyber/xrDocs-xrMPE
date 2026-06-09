@@ -496,14 +496,100 @@ h1 {
 .doc-article h4,
 .doc-article h5,
 .doc-article h6 {
+  position: relative;
   scroll-margin-top: 92px;
   line-height: 1.25;
   color: var(--heading);
   font-weight: 700;
 }
 
+.doc-article .heading-anchor {
+  position: absolute;
+  top: 0.1em;
+  left: -1.45em;
+  display: inline-flex;
+  width: 1.15em;
+  height: 1.25em;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  opacity: 0;
+  text-decoration: none;
+  transition:
+    color 0.14s ease,
+    opacity 0.14s ease;
+}
+
+.doc-article .heading-anchor::before,
+.doc-article .heading-anchor::after {
+  content: "";
+  position: absolute;
+  width: 1em;
+  height: 1em;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='currentColor' d='M17.74 2.76a4.32 4.32 0 0 1 0 6.1l-1.53 1.52c-1.12 1.12-2.7 1.47-4.14 1.09l2.62-2.61l.76-.77l.76-.76c.84-.84.84-2.2 0-3.04a2.13 2.13 0 0 0-3.04 0l-.77.76l-3.38 3.38c-.37-1.44-.02-3.02 1.1-4.14l1.52-1.53a4.32 4.32 0 0 1 6.1 0M8.59 13.43l5.34-5.34c.42-.42.42-1.1 0-1.52c-.44-.43-1.13-.39-1.53 0l-5.33 5.34c-.42.42-.42 1.1 0 1.52c.44.43 1.13.39 1.52 0m-.76 2.29l4.14-4.15c.38 1.44.03 3.02-1.09 4.14l-1.52 1.53a4.32 4.32 0 0 1-6.1 0a4.32 4.32 0 0 1 0-6.1l1.53-1.52c1.12-1.12 2.7-1.47 4.14-1.1l-4.14 4.15c-.85.84-.85 2.2 0 3.05c.84.84 2.2.84 3.04 0'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='currentColor' d='M17.74 2.76a4.32 4.32 0 0 1 0 6.1l-1.53 1.52c-1.12 1.12-2.7 1.47-4.14 1.09l2.62-2.61l.76-.77l.76-.76c.84-.84.84-2.2 0-3.04a2.13 2.13 0 0 0-3.04 0l-.77.76l-3.38 3.38c-.37-1.44-.02-3.02 1.1-4.14l1.52-1.53a4.32 4.32 0 0 1 6.1 0M8.59 13.43l5.34-5.34c.42-.42.42-1.1 0-1.52c-.44-.43-1.13-.39-1.53 0l-5.33 5.34c-.42.42-.42 1.1 0 1.52c.44.43 1.13.39 1.52 0m-.76 2.29l4.14-4.15c.38 1.44.03 3.02-1.09 4.14l-1.52 1.53a4.32 4.32 0 0 1-6.1 0a4.32 4.32 0 0 1 0-6.1l1.53-1.52c1.12-1.12 2.7-1.47 4.14-1.1l-4.14 4.15c-.85.84-.85 2.2 0 3.05c.84.84 2.2.84 3.04 0'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.doc-article .heading-anchor::after {
+  content: none;
+}
+
+.doc-article h1:hover > .heading-anchor,
+.doc-article h2:hover > .heading-anchor,
+.doc-article h3:hover > .heading-anchor,
+.doc-article h4:hover > .heading-anchor,
+.doc-article h5:hover > .heading-anchor,
+.doc-article h6:hover > .heading-anchor,
+.doc-article h1:focus-within > .heading-anchor,
+.doc-article h2:focus-within > .heading-anchor,
+.doc-article h3:focus-within > .heading-anchor,
+.doc-article h4:focus-within > .heading-anchor,
+.doc-article h5:focus-within > .heading-anchor,
+.doc-article h6:focus-within > .heading-anchor {
+  opacity: 1;
+}
+
+.doc-article .heading-anchor:hover,
+.doc-article .heading-anchor:focus-visible {
+  color: var(--accent-text);
+}
+
+.doc-article .heading-anchor:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
 .doc-article h1 {
   font-size: 1.85rem;
+}
+
+.doc-article .heading-target-highlight {
+  isolation: isolate;
+}
+
+.doc-article .heading-target-highlight::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -0.12em -8px;
+  border-left: 4px solid #ff8400;
+  border-radius: 4px;
+  pointer-events: none;
+  animation: heading-target-highlight 2s ease-out;
+}
+
+@keyframes heading-target-highlight {
+  0%,
+  18% {
+    background: rgba(255, 132, 0, 0.24);
+    opacity: 1;
+  }
+
+  100% {
+    background: transparent;
+    opacity: 0;
+  }
 }
 
 .doc-article h2 {

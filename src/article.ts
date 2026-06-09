@@ -81,7 +81,7 @@ export async function fetchRenderedDoc(doc: Doc): Promise<RenderedDoc> {
 export async function renderMarkdownDoc(doc: Doc): Promise<RenderedDoc> {
   const content = await loadDevDocContent(doc);
   const { renderDocContent } = await import('./markdown-renderer');
-  return renderDocContent(content, doc.lang, { basePath });
+  return renderDocContent(content, doc.lang, { basePath, docId: doc.id });
 }
 
 export async function loadDevDocContent(doc: Doc): Promise<string> {

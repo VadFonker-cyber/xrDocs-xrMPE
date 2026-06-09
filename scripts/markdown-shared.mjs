@@ -46,14 +46,21 @@ import { createRequire } from 'node:module';
 // Callout titles come from the same locale JSON files used by the browser bundle.
 // src/locales/{lang}.json is the single source of truth — do not duplicate here.
 const _require = createRequire(import.meta.url);
+const _localeLabels = Object.fromEntries(
+  ['en', 'ru'].map((lang) => [lang, _require(`../src/locales/${lang}.json`)])
+);
 const _calloutTitles = Object.fromEntries(
   ['en', 'ru'].map((lang) => {
-    const labels = _require(`../src/locales/${lang}.json`);
+    const labels = _localeLabels[lang];
     return [lang, Object.fromEntries(
       ['note', 'tip', 'important', 'warning', 'caution'].map((k) => [k, labels[`callout.${k}`] || k])
     )];
   })
 );
+
+export function getLocaleLabel(lang, key) {
+  return _localeLabels[lang]?.[key] || _localeLabels.en?.[key] || key;
+}
 
 export function getDefaultCalloutTitle(kind, lang) {
   return _calloutTitles[lang]?.[kind] || kind;

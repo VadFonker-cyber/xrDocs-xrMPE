@@ -3,6 +3,7 @@ import {
   highlightCode,
   generateHeadingId,
   getDefaultCalloutTitle,
+  getLocaleLabel,
   isLocalAssetSrc,
   isThemeAssetSrc,
   normalizeThemeAssetSrc,
@@ -19,6 +20,7 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 const defaultImageRule = md.renderer.rules.image;
+const defaultHeadingOpenRule = md.renderer.rules.heading_open;
 const alertTypes = new Set(['note', 'tip', 'important', 'warning', 'caution']);
 const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
 
@@ -42,6 +44,19 @@ md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
       : self.renderToken(tokens, index, options);
   };
 });
+
+md.renderer.rules.heading_open = (tokens, index, options, env, self) => {
+  const rendered = defaultHeadingOpenRule
+    ? defaultHeadingOpenRule(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+  const id = tokens[index].attrGet('id');
+
+  if (!id) {
+    return rendered;
+  }
+
+  return `${rendered}<a class="heading-anchor" href="#${encodeURIComponent(id)}" aria-label="${escapeHtml(getLocaleLabel(env.lang, 'aria.headingAnchor'))}"></a>`;
+};
 
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
@@ -92,7 +107,7 @@ export function renderDocContent(content, lang, options = {}) {
   }
 
   return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath),
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath, options.docId || ''),
     toc: buildTocTree(headings),
   };
 }
@@ -208,21 +223,53 @@ function findClosingToken(tokens, start, closingType) {
   return -1;
 }
 
-function rewriteDocLinks(html, basePath) {
+function rewriteDocLinks(html, basePath, docId = '') {
   return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (match, link) => {
     if (!isLocalAssetSrc(link)) {
       return match;
     }
 
     const [linkPath, hash = ''] = link.split('#');
-    const normalized = linkPath
-      .replace(/^\.\//, '')
-      .replace(/^\/?docs\//, '')
-      .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/i, '');
+    const normalized = normalizeDocLinkPath(linkPath, docId);
 
     return `href="${getDocPath(normalized, basePath)}${hash ? `#${hash}` : ''}"`;
   });
+}
+
+function normalizeDocLinkPath(linkPath, docId) {
+  const normalizedPath = linkPath.replace(/\\/g, '/');
+
+  if (docId && /^\.\.?\//.test(normalizedPath)) {
+    const docDir = docId.split('/').slice(0, -1).join('/');
+    return normalizePathSegments(`${docDir ? `${docDir}/` : ''}${normalizedPath.replace(/\.md$/i, '')}`);
+  }
+
+  return normalizePathSegments(
+    normalizedPath
+      .replace(/^\.\//, '')
+      .replace(/^\/?docs\//, '')
+      .replace(/^(ru|en)\//, '')
+      .replace(/\.md$/i, ''),
+  );
+}
+
+function normalizePathSegments(value) {
+  const segments = [];
+
+  value.split('/').forEach((segment) => {
+    if (!segment || segment === '.') {
+      return;
+    }
+
+    if (segment === '..') {
+      segments.pop();
+      return;
+    }
+
+    segments.push(segment);
+  });
+
+  return segments.join('/');
 }
 
 function applyGithubAlerts(state) {

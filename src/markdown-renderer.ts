@@ -12,6 +12,7 @@ import { buildTocTree } from './utils/toc-builder';
 
 type RenderOptions = {
   basePath: string;
+  docId?: string;
 };
 
 type RenderEnv = {
@@ -37,6 +38,7 @@ md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
 
 const defaultImageRule = md.renderer.rules.image;
+const defaultHeadingOpenRule = md.renderer.rules.heading_open;
 (['th_open', 'td_open'] as const).forEach((ruleName) => {
   const defaultRule = md.renderer.rules[ruleName];
 
@@ -54,6 +56,20 @@ const defaultImageRule = md.renderer.rules.image;
       : self.renderToken(tokens, index, options);
   };
 });
+
+md.renderer.rules.heading_open = (tokens, index, options, env, self) => {
+  const rendered = defaultHeadingOpenRule
+    ? defaultHeadingOpenRule(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+  const id = tokens[index].attrGet('id');
+
+  if (!id) {
+    return rendered;
+  }
+
+  const renderEnv = env as RenderEnv;
+  return `${rendered}<a class="heading-anchor" href="#${encodeURIComponent(id)}" aria-label="${escapeHtml(getLabel(renderEnv.lang, 'aria.headingAnchor'))}"></a>`;
+};
 
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
@@ -220,7 +236,7 @@ export function renderDocContent(content: string, lang: Lang, options: RenderOpt
   }
 
   return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), options.basePath),
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), options.basePath, options.docId),
     toc: buildTocTree(headings),
   };
 }
@@ -346,21 +362,53 @@ function getDefaultCalloutTitle(kind: AlertType, lang: Lang): string {
   return getLabel(lang, `callout.${kind}`);
 }
 
-function rewriteDocLinks(html: string, basePath: string): string {
+function rewriteDocLinks(html: string, basePath: string, docId = ''): string {
   return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (match, link: string) => {
     if (!isLocalAssetSrc(link)) {
       return match;
     }
 
     const [path, hash = ''] = link.split('#');
-    const normalized = path
-      .replace(/^\.\//, '')
-      .replace(/^\/?docs\//, '')
-      .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/i, '');
+    const normalized = normalizeDocLinkPath(path, docId);
 
     return `href="${getDocUrl(normalized, basePath)}${hash ? `#${hash}` : ''}"`;
   });
+}
+
+function normalizeDocLinkPath(path: string, docId: string): string {
+  const normalizedPath = path.replace(/\\/g, '/');
+
+  if (docId && /^\.\.?\//.test(normalizedPath)) {
+    const docDir = docId.split('/').slice(0, -1).join('/');
+    return normalizePathSegments(`${docDir ? `${docDir}/` : ''}${normalizedPath.replace(/\.md$/i, '')}`);
+  }
+
+  return normalizePathSegments(
+    normalizedPath
+      .replace(/^\.\//, '')
+      .replace(/^\/?docs\//, '')
+      .replace(/^(ru|en)\//, '')
+      .replace(/\.md$/i, ''),
+  );
+}
+
+function normalizePathSegments(path: string): string {
+  const segments: string[] = [];
+
+  path.split('/').forEach((segment) => {
+    if (!segment || segment === '.') {
+      return;
+    }
+
+    if (segment === '..') {
+      segments.pop();
+      return;
+    }
+
+    segments.push(segment);
+  });
+
+  return segments.join('/');
 }
 
 function isThemeAssetSrc(src: string): boolean {

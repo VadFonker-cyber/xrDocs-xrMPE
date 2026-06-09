@@ -28,6 +28,13 @@ export async function generateContentData(options = {}) {
     .map((file) => slash(path.relative(publicDir, file)))
     .filter((file) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file))
     .sort((a, b) => a.localeCompare(b));
+  const renderedDocs = new Map(
+    docs.map((doc) => [
+      getDocKey(doc),
+      renderDocContent(doc.content, doc.lang, { basePath, docId: doc.id }),
+    ]),
+  );
+  const headingAliases = buildHeadingAliases(docs, renderedDocs);
 
   await fs.promises.mkdir(generatedDir, { recursive: true });
 
@@ -41,6 +48,10 @@ export async function generateContentData(options = {}) {
       `${JSON.stringify(themeAssets, null, 2)}\n`,
     ),
     fs.promises.writeFile(
+      path.join(generatedDir, 'heading-aliases.json'),
+      `${JSON.stringify(headingAliases, null, 2)}\n`,
+    ),
+    fs.promises.writeFile(
       path.join(publicDir, 'search-index.json'),
       `${JSON.stringify({ docs: searchIndex })}\n`,
     ),
@@ -52,7 +63,12 @@ export async function generateContentData(options = {}) {
   await Promise.all(
     docs.map(async (doc) => {
       const outputPath = getRenderedDocOutputPath(docContentDir, doc);
-      const renderedDoc = renderDocContent(doc.content, doc.lang, { basePath });
+      const renderedDoc = renderedDocs.get(getDocKey(doc));
+
+      if (!renderedDoc) {
+        throw new Error(`Rendered document was not found for ${doc.lang}:${doc.id}.`);
+      }
+
       await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.promises.writeFile(outputPath, `${JSON.stringify(renderedDoc)}\n`);
     }),
@@ -99,7 +115,52 @@ function slash(value) {
   return value.replace(/\\/g, '/');
 }
 
+function buildHeadingAliases(docs, renderedDocs) {
+  const aliases = {};
+
+  for (const targetDoc of docs) {
+    const targetHeadings = flattenToc(renderedDocs.get(getDocKey(targetDoc))?.toc || []);
+    const targetAliases = {};
+
+    for (const sourceDoc of docs) {
+      if (sourceDoc.id !== targetDoc.id || sourceDoc.lang === targetDoc.lang) {
+        continue;
+      }
+
+      const sourceHeadings = flattenToc(renderedDocs.get(getDocKey(sourceDoc))?.toc || []);
+      const max = Math.min(sourceHeadings.length, targetHeadings.length);
+
+      for (let index = 0; index < max; index += 1) {
+        const source = sourceHeadings[index];
+        const target = targetHeadings[index];
+
+        if (source.level === target.level && source.id !== target.id) {
+          targetAliases[source.id] = target.id;
+        }
+      }
+    }
+
+    if (Object.keys(targetAliases).length) {
+      aliases[getDocKey(targetDoc)] = targetAliases;
+    }
+  }
+
+  return aliases;
+}
+
+function flattenToc(items, result = []) {
+  for (const item of items) {
+    result.push(item);
+    flattenToc(item.children || [], result);
+  }
+
+  return result;
+}
+
+function getDocKey(doc) {
+  return `${doc.lang}:${doc.id}`;
+}
+
 function getRenderedDocOutputPath(docContentDir, doc) {
   return path.join(docContentDir, doc.lang, ...doc.id.split('/'), 'index.json');
 }
-

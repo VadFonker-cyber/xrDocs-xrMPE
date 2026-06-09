@@ -75,7 +75,7 @@ async function writePage(doc, canonicalPath, outputPath) {
 function renderStaticBody(activeDoc) {
   const copy = readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath }).html;
+  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath, docId: activeDoc.id }).html;
   const docKey = `${activeDoc.lang}:${activeDoc.id}`;
 
   return `

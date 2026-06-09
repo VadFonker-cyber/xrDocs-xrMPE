@@ -1,12 +1,12 @@
 import type { AppContext } from './app-context';
 import { getDocCacheKey } from './article';
+import { getDocByKey, type Doc } from './docs';
 import { getLabel, labels } from './locales';
-import { getAssetUrl, navigateToLink } from './routing';
+import { basePath, getAssetUrl, navigateToLink, readRouteFromPath } from './routing';
 import { loadSearchIndex } from './search';
 import { getNextThemePreference, getResolvedTheme } from './theme';
-import { getTocTitle, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
+import { getTocTitle, highlightHashTarget, highlightHeading, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
 import { escapeHtml } from './utils/html';
-import type { Doc } from './docs';
 import type { ThemePreference } from './state';
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
@@ -206,6 +206,30 @@ function bindShellEvents(context: AppContext): void {
     context.setNavOpen(false);
   });
 
+  document.querySelector<HTMLElement>('#docArticle')?.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    const link = target?.closest<HTMLAnchorElement>('a');
+
+    if (!link) {
+      return;
+    }
+
+    if (link.classList.contains('heading-anchor')) {
+      if (isPrimaryPlainClick(event)) {
+        event.preventDefault();
+        void copyTextToClipboard(link.href);
+      }
+
+      return;
+    }
+
+    if (!shouldHandleArticleLink(context, event, link)) {
+      return;
+    }
+
+    navigateToLink(event, link, context.state, context.render);
+  });
+
   document.querySelector<HTMLButtonElement>('#navToggle')?.addEventListener('click', () => {
     context.setNavOpen(!context.state.navOpen);
   });
@@ -282,6 +306,7 @@ function bindShellEvents(context: AppContext): void {
     setActiveHeading(context, id);
     history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(id)}`);
     heading.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    highlightHeading(heading);
 
     if (window.matchMedia('(max-width: 1100px)').matches) {
       context.setTocOpen(false);
@@ -302,6 +327,76 @@ function bindShellEvents(context: AppContext): void {
       context.setTocOpen(false);
     }
   });
+
+  window.addEventListener('hashchange', () => {
+    window.setTimeout(() => {
+      highlightHashTarget(context);
+    }, 0);
+  });
+}
+
+function shouldHandleArticleLink(context: AppContext, event: MouseEvent, link: HTMLAnchorElement): boolean {
+  if (!isPrimaryPlainClick(event)) {
+    return false;
+  }
+
+  if (link.hasAttribute('download') || (link.target && link.target.toLowerCase() !== '_self')) {
+    return false;
+  }
+
+  const href = link.getAttribute('href')?.trim();
+
+  if (!href || href === '#') {
+    return false;
+  }
+
+  const url = new URL(link.href);
+
+  if (url.origin !== location.origin || !url.pathname.startsWith(basePath)) {
+    return false;
+  }
+
+  const route = readRouteFromPath(url.pathname, context.state.lang);
+
+  if (!route) {
+    return false;
+  }
+
+  if (!route.id) {
+    return true;
+  }
+
+  return Boolean(getDocByKey(route.lang, route.id));
+}
+
+function isPrimaryPlainClick(event: MouseEvent): boolean {
+  return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+async function copyTextToClipboard(value: string): Promise<void> {
+  if (!navigator.clipboard?.writeText) {
+    fallbackCopyText(value);
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    fallbackCopyText(value);
+  }
+}
+
+function fallbackCopyText(value: string): void {
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 function getThemeToggleTitle(context: AppContext, theme: ThemePreference): string {

@@ -7,6 +7,7 @@
   "aria.switchTheme": "Switch theme",
   "aria.resizeContents": "Resize contents panel",
   "aria.toggleSection": "Toggle section",
+  "aria.headingAnchor": "Copy link to this heading",
   "callout.note": "Note",
   "callout.tip": "Tip",
   "callout.important": "Important",
