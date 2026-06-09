@@ -25,6 +25,7 @@
   --mark-bg: rgba(255, 255, 255, 0.18);
   --mark-text: #ffffff;
   --shadow-line: rgba(255, 255, 255, 0.16);
+  --topbar-button-size: 38px;
   background: var(--bg);
   color: var(--text);
 }
@@ -396,7 +397,8 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 38px;
+  width: var(--topbar-button-size);
+  height: var(--topbar-button-size);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-strong);
@@ -409,21 +411,16 @@ h1 {
 }
 
 .control-button {
-  min-width: 46px;
-  padding: 0 12px;
+  padding: 0;
 }
 
 .control-button.nav-toggle {
   display: none;
 }
 
-.icon-button {
-  width: 38px;
-}
-
 .icon-button svg {
-  width: 21px;
-  height: 21px;
+  width: 24px;
+  height: 24px;
   fill: currentColor;
 }
 
@@ -462,16 +459,12 @@ h1 {
 }
 
 .toc-icon {
-  position: relative;
-  width: 19px;
-  height: 15px;
-  border-top: 0;
-  border-bottom: 0;
-  background:
-    radial-gradient(circle, currentColor 0 1.3px, transparent 1.4px) 0 1px / 4px 5px repeat-y,
-    linear-gradient(currentColor, currentColor) 7px 1px / 12px 1.5px no-repeat,
-    linear-gradient(currentColor, currentColor) 7px 7px / 12px 1.5px no-repeat,
-    linear-gradient(currentColor, currentColor) 7px 13px / 12px 1.5px no-repeat;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath fill='currentColor' fill-rule='evenodd' d='M10 36a3 3 0 1 1 0 6a3 3 0 0 1 0-6m35.998 1c1.106 0 2.002.888 2.002 2c0 1.105-.89 2-2.002 2H18.002A1.996 1.996 0 0 1 16 39c0-1.105.89-2 2.002-2zM10 26a3 3 0 1 1 0 6a3 3 0 0 1 0-6m35.998 1c1.106 0 2.002.888 2.002 2c0 1.105-.89 2-2.002 2H18.002A1.996 1.996 0 0 1 16 29c0-1.105.89-2 2.002-2zM10 16a3 3 0 1 1 0 6a3 3 0 0 1 0-6m35.998 1c1.106 0 2.002.888 2.002 2c0 1.105-.89 2-2.002 2H18.002A1.996 1.996 0 0 1 16 19c0-1.105.89-2 2.002-2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath fill='currentColor' fill-rule='evenodd' d='M10 36a3 3 0 1 1 0 6a3 3 0 0 1 0-6m35.998 1c1.106 0 2.002.888 2.002 2c0 1.105-.89 2-2.002 2H18.002A1.996 1.996 0 0 1 16 39c0-1.105.89-2 2.002-2zM10 26a3 3 0 1 1 0 6a3 3 0 0 1 0-6m35.998 1c1.106 0 2.002.888 2.002 2c0 1.105-.89 2-2.002 2H18.002A1.996 1.996 0 0 1 16 29c0-1.105.89-2 2.002-2zM10 16a3 3 0 1 1 0 6a3 3 0 0 1 0-6m35.998 1c1.106 0 2.002.888 2.002 2c0 1.105-.89 2-2.002 2H18.002A1.996 1.996 0 0 1 16 19c0-1.105.89-2 2.002-2z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .toc-icon::before {
@@ -1112,7 +1105,10 @@ h1 {
 
   .control-button.nav-toggle {
     display: inline-flex;
-    gap: 8px;
+  }
+
+  .control-button.nav-toggle span:last-child {
+    display: none;
   }
 
   .nav-overlay,
@@ -1203,10 +1199,6 @@ h1 {
   .topbar-controls {
     justify-content: flex-end;
     width: auto;
-  }
-
-  .toc-toggle {
-    gap: 8px;
   }
 
   .content-grid {
