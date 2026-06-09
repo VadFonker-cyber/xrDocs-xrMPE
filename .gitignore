@@ -9,6 +9,7 @@ public/search-index.json
 public/doc-content.json
 public/doc-content/
 public/.asset-cache.json
+public/**/*.avif
 
 # Local verification artifacts
 .playwright-mcp/

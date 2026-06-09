@@ -25,5 +25,16 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore optimized image assets
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            public/**/*.avif
+            public/.asset-cache.json
+          key: optimized-assets-${{ runner.os }}-${{ hashFiles('package-lock.json', 'scripts/optimize-assets.mjs', 'scripts/assets/xrdocs-icon.png', 'public/**/*.png', 'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp') }}
+          restore-keys: |
+            optimized-assets-${{ runner.os }}-
+
       - name: Build
         run: npm run build

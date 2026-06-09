@@ -1,22 +1,18 @@
 import MarkdownIt from 'markdown-it';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 import type Token from 'markdown-it/lib/token.mjs';
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import dos from 'highlight.js/lib/languages/dos';
-import ini from 'highlight.js/lib/languages/ini';
-import json from 'highlight.js/lib/languages/json';
-import markdown from 'highlight.js/lib/languages/markdown';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import powershell from 'highlight.js/lib/languages/powershell';
-import xml from 'highlight.js/lib/languages/xml';
 import type { Lang } from './docs';
+import { hljs } from './hljs-setup';
+import { getLabel } from './locales';
 import { getAssetUrl, getDocUrl, isLocalAssetSrc } from './routing';
 import type { TocItem, RenderedDoc } from './types';
-import { escapeHtml, getLabel, splitAssetSrc } from './utils/html';
+import { escapeHtml, splitAssetSrc } from './utils/html';
+import { generateHeadingId } from './utils/markdown';
+import { buildTocTree } from './utils/toc-builder';
 
 type RenderOptions = {
   basePath: string;
+  docId?: string;
 };
 
 type RenderEnv = {
@@ -25,6 +21,7 @@ type RenderEnv = {
 };
 
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
+const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
 const alertTypes = ['note', 'tip', 'important', 'warning', 'caution'] as const;
 
 type AlertType = (typeof alertTypes)[number];
@@ -37,26 +34,11 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 
-hljs.registerLanguage('ini', ini);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('bat', dos);
-hljs.registerLanguage('batch', dos);
-hljs.registerLanguage('cmd', dos);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('powershell', powershell);
-hljs.registerLanguage('ps1', powershell);
-hljs.registerLanguage('pwsh', powershell);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('text', plaintext);
-hljs.registerLanguage('plaintext', plaintext);
-hljs.registerLanguage('xml', xml);
-
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
 
 const defaultImageRule = md.renderer.rules.image;
+const defaultHeadingOpenRule = md.renderer.rules.heading_open;
 (['th_open', 'td_open'] as const).forEach((ruleName) => {
   const defaultRule = md.renderer.rules[ruleName];
 
@@ -75,6 +57,20 @@ const defaultImageRule = md.renderer.rules.image;
   };
 });
 
+md.renderer.rules.heading_open = (tokens, index, options, env, self) => {
+  const rendered = defaultHeadingOpenRule
+    ? defaultHeadingOpenRule(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+  const id = tokens[index].attrGet('id');
+
+  if (!id) {
+    return rendered;
+  }
+
+  const renderEnv = env as RenderEnv;
+  return `${rendered}<a class="heading-anchor" href="#${encodeURIComponent(id)}" aria-label="${escapeHtml(getLabel(renderEnv.lang, 'aria.headingAnchor'))}"></a>`;
+};
+
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
   const srcIndex = token.attrIndex('src');
@@ -84,10 +80,11 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetUrl(src, renderEnv.basePath));
+      const assetSrc = preferAvifAssetSrc(src);
+      token.attrSet('src', getAssetUrl(assetSrc, renderEnv.basePath));
 
-      if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(src), renderEnv.basePath));
+      if (isThemeAssetSrc(assetSrc)) {
+        token.attrSet('data-theme-asset-base', getAssetUrl(normalizeThemeAssetSrc(assetSrc), renderEnv.basePath));
       }
     }
   }
@@ -220,11 +217,27 @@ function stripGithubAlertMarker(token: Token): AlertType | undefined {
 export function renderDocContent(content: string, lang: Lang, options: RenderOptions): RenderedDoc {
   const env: RenderEnv = { basePath: options.basePath, lang };
   const tokens = md.parse(content, env);
-  const toc = createToc(tokens, lang);
+  const slugCounts = new Map<string, number>();
+  const headings: Array<{ id: string; level: number; title: string }> = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'heading_open') {
+      continue;
+    }
+
+    const level = Number(token.tag.slice(1));
+    const inline = tokens[index + 1];
+    const title = inline?.type === 'inline' ? inline.content.trim() : '';
+    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
+    token.attrSet('id', id);
+    headings.push({ id, level, title: title || id });
+  }
 
   return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), options.basePath),
-    toc,
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), options.basePath, options.docId),
+    toc: buildTocTree(headings),
   };
 }
 
@@ -331,62 +344,6 @@ function findClosingToken(tokens: Token[], start: number, closingType: string): 
   return -1;
 }
 
-function createToc(tokens: Token[], lang: Lang): TocItem[] {
-  const roots: TocItem[] = [];
-  const stack: TocItem[] = [];
-  const slugCounts = new Map<string, number>();
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-
-    if (token.type !== 'heading_open') {
-      continue;
-    }
-
-    const level = Number(token.tag.slice(1));
-    const inline = tokens[index + 1];
-    const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
-    slugCounts.set(baseSlug, count);
-    token.attrSet('id', id);
-
-    const item: TocItem = {
-      id,
-      title: title || id,
-      level,
-      children: [],
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent) {
-      item.parentId = parent.id;
-      parent.children.push(item);
-    } else {
-      roots.push(item);
-    }
-
-    stack.push(item);
-  }
-
-  return roots;
-}
-
-function slugifyHeading(value: string, lang: Lang): string {
-  return value
-    .toLocaleLowerCase(lang)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
-}
-
 function highlightCode(source: string, language: string): string {
   const lang = language.trim().toLowerCase();
 
@@ -405,21 +362,53 @@ function getDefaultCalloutTitle(kind: AlertType, lang: Lang): string {
   return getLabel(lang, `callout.${kind}`);
 }
 
-function rewriteDocLinks(html: string, basePath: string): string {
+function rewriteDocLinks(html: string, basePath: string, docId = ''): string {
   return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (match, link: string) => {
     if (!isLocalAssetSrc(link)) {
       return match;
     }
 
     const [path, hash = ''] = link.split('#');
-    const normalized = path
-      .replace(/^\.\//, '')
-      .replace(/^\/?docs\//, '')
-      .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/i, '');
+    const normalized = normalizeDocLinkPath(path, docId);
 
     return `href="${getDocUrl(normalized, basePath)}${hash ? `#${hash}` : ''}"`;
   });
+}
+
+function normalizeDocLinkPath(path: string, docId: string): string {
+  const normalizedPath = path.replace(/\\/g, '/');
+
+  if (docId && /^\.\.?\//.test(normalizedPath)) {
+    const docDir = docId.split('/').slice(0, -1).join('/');
+    return normalizePathSegments(`${docDir ? `${docDir}/` : ''}${normalizedPath.replace(/\.md$/i, '')}`);
+  }
+
+  return normalizePathSegments(
+    normalizedPath
+      .replace(/^\.\//, '')
+      .replace(/^\/?docs\//, '')
+      .replace(/^(ru|en)\//, '')
+      .replace(/\.md$/i, ''),
+  );
+}
+
+function normalizePathSegments(path: string): string {
+  const segments: string[] = [];
+
+  path.split('/').forEach((segment) => {
+    if (!segment || segment === '.') {
+      return;
+    }
+
+    if (segment === '..') {
+      segments.pop();
+      return;
+    }
+
+    segments.push(segment);
+  });
+
+  return segments.join('/');
 }
 
 function isThemeAssetSrc(src: string): boolean {
@@ -433,4 +422,14 @@ function normalizeThemeAssetSrc(src: string): string {
   const themedSuffix = new RegExp(`\\.(dark|light)(\\.(${themeAssetExtensions}))$`, 'i');
 
   return `${path.replace(themedSuffix, '$2')}${suffix}`;
+}
+
+function preferAvifAssetSrc(src: string): string {
+  const { path, suffix } = splitAssetSrc(src);
+
+  if (!avifConvertibleAsset.test(path)) {
+    return src;
+  }
+
+  return `${path.replace(avifConvertibleAsset, '.avif')}${suffix}`;
 }

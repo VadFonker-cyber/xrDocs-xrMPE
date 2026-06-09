@@ -6,7 +6,7 @@ import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
-import { normalizeBasePath } from './shared-utils.mjs';
+import { findNodePath, getNavNodeKey, normalizeBasePath } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(rootDir, 'docs');
@@ -28,14 +28,11 @@ const pages = getCanonicalDocs()
     outputPath: path.join(distDir, ...doc.id.split('/'), 'index.html'),
   }));
 
-for (const page of pages) {
-  writePage(page.doc, page.canonicalPath, page.outputPath);
-}
+await Promise.all(pages.map((page) => writePage(page.doc, page.canonicalPath, page.outputPath)));
 
 const defaultDoc = firstByLang.get('en') || docs[0];
-
 if (defaultDoc) {
-  writePage(defaultDoc, '/', templatePath);
+  await writePage(defaultDoc, '/', templatePath);
 }
 
 if (!noindex) {
@@ -46,37 +43,39 @@ writeRobots();
 
 console.log(`Prerendered ${pages.length} documentation pages.`);
 
-function writePage(doc, canonicalPath, outputPath) {
+async function writePage(doc, canonicalPath, outputPath) {
   const title = `${doc.title} | ${siteName}`;
   const description = siteMeta[doc.lang].description;
   const canonicalUrl = toAbsoluteUrl(canonicalPath);
   const body = renderStaticBody(doc);
+
+  const patches = [
+    { attribute: 'name', name: 'description', content: description },
+    { attribute: 'property', name: 'og:title', content: title },
+    { attribute: 'property', name: 'og:description', content: description },
+    { attribute: 'property', name: 'og:url', content: canonicalUrl },
+    { attribute: 'property', name: 'og:locale', content: siteMeta[doc.lang].locale },
+    { attribute: 'name', name: 'twitter:title', content: title },
+    { attribute: 'name', name: 'twitter:description', content: description },
+    ...(noindex ? [{ attribute: 'name', name: 'robots', content: 'noindex, nofollow' }] : []),
+  ];
+  const linkPatches = [{ rel: 'canonical', href: canonicalUrl }];
+
   let html = template
     .replace(/<html lang="[^"]*"/, `<html lang="${doc.lang}"`)
     .replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
     .replace(/<div id="app"><\/div>/, `<div id="app">${body}</div>`);
 
-  html = setMeta(html, 'name', 'description', description);
-  html = setMeta(html, 'property', 'og:title', title);
-  html = setMeta(html, 'property', 'og:description', description);
-  html = setMeta(html, 'property', 'og:url', canonicalUrl);
-  html = setMeta(html, 'property', 'og:locale', siteMeta[doc.lang].locale);
-  html = setMeta(html, 'name', 'twitter:title', title);
-  html = setMeta(html, 'name', 'twitter:description', description);
-  html = upsertLink(html, 'canonical', canonicalUrl);
+  html = applyMetaPatches(html, patches, linkPatches);
 
-  if (noindex) {
-    html = setMeta(html, 'name', 'robots', 'noindex, nofollow');
-  }
-
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, html);
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.promises.writeFile(outputPath, html);
 }
 
 function renderStaticBody(activeDoc) {
   const copy = readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath }).html;
+  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath, docId: activeDoc.id }).html;
   const docKey = `${activeDoc.lang}:${activeDoc.id}`;
 
   return `
@@ -148,7 +147,11 @@ function renderStaticNavNodes(nodes, activeDoc, activeAncestorKeys) {
   return `<ul class="nav-list">${nodes.map((node) => renderStaticNavNode(node, activeDoc, activeAncestorKeys)).join('')}</ul>`;
 }
 
-// Client markup in src/nav.ts mirrors this static structure.
+// SYNC CONTRACT: this function must produce the same HTML structure as
+// renderNavNode() in src/nav.ts. Differences allowed:
+//   - no data-nav-id click handling (static HTML has no JS at render time)
+//   - expanded is derived only from ancestor path, not navExpandedIds
+// If you change the HTML here, update src/nav.ts accordingly, and vice versa.
 function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
   const key = getNavNodeKey(node);
   const hasChildren = node.children.length > 0;
@@ -187,26 +190,6 @@ function findNavNodePath(lang, id) {
   }
 
   return [];
-}
-
-function findNodePath(nodes, id) {
-  for (const node of nodes) {
-    if (node.id === id) {
-      return [node];
-    }
-
-    const childPath = findNodePath(node.children, id);
-
-    if (childPath.length) {
-      return [node, ...childPath];
-    }
-  }
-
-  return [];
-}
-
-function getNavNodeKey(node) {
-  return node.id || `${node.depth}:${node.order}:${node.title}`;
 }
 
 function writeSitemap(pages) {
@@ -303,27 +286,48 @@ function readLabels(lang) {
   return JSON.parse(fs.readFileSync(localePath, 'utf8'));
 }
 
-function setMeta(html, attribute, name, content) {
-  const escaped = escapeHtml(content);
-  const pattern = new RegExp(`<meta\\s+${attribute}="${escapeRegExp(name)}"\\s+content="[^"]*"\\s*/?>`);
-  const tag = `<meta ${attribute}="${name}" content="${escaped}" />`;
+/**
+ * Applies all meta tag and link replacements in a SINGLE pass over the HTML string,
+ * replacing the previous 8+ sequential regex calls in writePage.
+ * Uses capturing groups so each match is identified by index without re-scanning.
+ */
+function applyMetaPatches(html, metaPatches, linkPatches = []) {
+  const entries = [
+    ...metaPatches.map(({ attribute, name, content }) => ({
+      pattern: `<meta\\s+${attribute}="${escapeRegExp(name)}"\\s+content="[^"]*"\\s*/?>`,
+      tag: `<meta ${attribute}="${name}" content="${escapeHtml(content)}" />`,
+    })),
+    ...linkPatches.map(({ rel, href }) => ({
+      pattern: `<link\\s+rel="${escapeRegExp(rel)}"\\s+href="[^"]*"\\s*/?>`,
+      tag: `<link rel="${rel}" href="${escapeHtml(href)}" />`,
+    })),
+  ];
 
-  if (pattern.test(html)) {
-    return html.replace(pattern, tag);
+  const found = new Array(entries.length).fill(false);
+  const combined = new RegExp(entries.map((e) => `(${e.pattern})`).join('|'), 'g');
+
+  html = html.replace(combined, (...args) => {
+    // args[1..n] are capturing groups; find the first non-undefined one
+    for (let i = 0; i < entries.length; i++) {
+      if (args[i + 1] !== undefined) {
+        found[i] = true;
+        return entries[i].tag;
+      }
+    }
+    return args[0];
+  });
+
+  // Inject tags that weren't already present in the template
+  const injections = entries
+    .filter((_, i) => !found[i])
+    .map((e) => `    ${e.tag}`)
+    .join('\n');
+
+  if (injections) {
+    html = html.replace('</head>', `${injections}\n  </head>`);
   }
 
-  return html.replace('</head>', `    ${tag}\n  </head>`);
-}
-
-function upsertLink(html, rel, href) {
-  const tag = `<link rel="${rel}" href="${escapeHtml(href)}" />`;
-  const pattern = new RegExp(`<link\\s+rel="${rel}"\\s+href="[^"]*"\\s*/?>`);
-
-  if (pattern.test(html)) {
-    return html.replace(pattern, tag);
-  }
-
-  return html.replace('</head>', `    ${tag}\n  </head>`);
+  return html;
 }
 
 function getCanonicalDocs() {

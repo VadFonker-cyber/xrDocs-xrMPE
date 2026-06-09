@@ -1,13 +1,13 @@
-import { labels, type LabelKey } from '../locales';
-import type { Lang } from '../docs';
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#039;',
+};
 
 export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
 }
 
 export function splitAssetSrc(src: string): { path: string; suffix: string } {
@@ -29,8 +29,4 @@ export function clamp(value: number, min: number, max: number): number {
 
 export function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-export function getLabel(lang: Lang, key: LabelKey): string {
-  return labels[lang][key] || labels.en[key] || key;
 }

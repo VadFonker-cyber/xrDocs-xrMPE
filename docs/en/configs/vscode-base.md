@@ -5,7 +5,16 @@ This page describes the basic VSCode/VSCodium setup for working with game files.
 > [!IMPORTANT]
 > Not all game files can be fully opened in VSCode/VSCodium. For example, models, textures, animations, and videos often require separate programs or extensions.
 
-## File Associations
+## Step 1: Installing an Editor
+
+Install one of the editors:
+
+- [VSCode](https://code.visualstudio.com/)
+- [VSCodium](https://vscodium.com/)
+
+The following setup is the same for VSCode and VSCodium.
+
+## Step 2: File Associations
 
 To make VSCode/VSCodium highlight engine files correctly, add extension associations to `settings.json`.
 

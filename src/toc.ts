@@ -2,7 +2,9 @@ import type { AppContext } from './app-context';
 import type { TocItem } from './types';
 import type { Doc, Lang } from './docs';
 import { normalizeSearch } from './search';
-import { clamp, escapeHtml, getLabel } from './utils/html';
+import { getLabel } from './locales';
+import { resolveHeadingAlias } from './heading-aliases';
+import { clamp, escapeHtml } from './utils/html';
 import { maxTocWidth, minTocWidth } from './state';
 
 let headingObserver: IntersectionObserver | undefined;
@@ -11,6 +13,7 @@ let currentTocItems: TocItem[] = [];
 // Cached flat item map — invalidated when the document changes
 let tocItemById: Map<string, TocItem> | undefined;
 let cachedCollapsibleIds: string[] | undefined;
+const headingHighlightTimers = new WeakMap<HTMLElement, number>();
 
 // Cached DOM references — valid for the lifetime of the shell
 type TocRefs = {
@@ -42,6 +45,20 @@ function getOrInitTocRefs(): TocRefs | undefined {
     searchToggle: document.querySelector<HTMLButtonElement>('#tocSearchToggle'),
     tocToggle: document.querySelector<HTMLButtonElement>('#tocToggle'),
     heading: panel.querySelector<HTMLHeadingElement>('.toc-header h2'),
+  });
+}
+
+export function bindTocCollapseToggle(context: AppContext): void {
+  const collapseToggle = document.querySelector<HTMLButtonElement>('#tocCollapseToggle');
+  if (!collapseToggle) return;
+
+  collapseToggle.addEventListener('click', () => {
+    const allCollapsed = collapseToggle.dataset.allCollapsed === 'true';
+    const collapsibleIds = collapseToggle.dataset.collapsibleIds
+      ? collapseToggle.dataset.collapsibleIds.split(',').filter(Boolean)
+      : [];
+    context.state.tocCollapsedIds = allCollapsed ? new Set<string>() : new Set(collapsibleIds);
+    renderToc(context);
   });
 }
 
@@ -144,10 +161,8 @@ export function renderToc(context: AppContext): void {
   collapseToggle.innerHTML = getCollapseIcon(allCollapsed);
   collapseToggle.setAttribute('aria-label', getLabel(context.state.lang, allCollapsed ? 'toc.expandAll' : 'toc.collapseAll'));
   collapseToggle.setAttribute('title', getLabel(context.state.lang, allCollapsed ? 'toc.expandAll' : 'toc.collapseAll'));
-  collapseToggle.onclick = () => {
-    context.state.tocCollapsedIds = allCollapsed ? new Set<string>() : new Set(collapsibleIds);
-    renderToc(context);
-  };
+  collapseToggle.dataset.allCollapsed = String(allCollapsed);
+  collapseToggle.dataset.collapsibleIds = collapsibleIds.join(',');
 
   if (!visibleItems.length) {
     nav.innerHTML = `<p class="empty">${escapeHtml(getLabel(context.state.lang, 'toc.noResults'))}</p>`;
@@ -156,6 +171,9 @@ export function renderToc(context: AppContext): void {
 
   nav.innerHTML = renderTocList(context, visibleItems, Boolean(query));
 }
+
+// Cached layout element — set on first use, valid for the lifetime of the shell
+let cachedLayoutEl: HTMLElement | null | undefined;
 
 export function startTocResize(context: AppContext, event: PointerEvent): void {
   if (event.button !== 0 || window.matchMedia('(max-width: 1100px)').matches) {
@@ -171,6 +189,7 @@ export function startTocResize(context: AppContext, event: PointerEvent): void {
 
   const stop = () => {
     document.documentElement.removeAttribute('data-toc-resizing');
+    localStorage.setItem('xrDocsTocWidth', String(context.state.tocWidth));
     window.removeEventListener('pointermove', resize);
     window.removeEventListener('pointerup', stop);
     window.removeEventListener('pointercancel', stop);
@@ -183,8 +202,10 @@ export function startTocResize(context: AppContext, event: PointerEvent): void {
 
 export function setTocWidth(context: AppContext, width: number): void {
   context.state.tocWidth = clamp(Math.round(width), minTocWidth, maxTocWidth);
-  document.querySelector<HTMLElement>('.layout')?.style.setProperty('--toc-width', `${context.state.tocWidth}px`);
-  localStorage.setItem('xrDocsTocWidth', String(context.state.tocWidth));
+  if (cachedLayoutEl === undefined) {
+    cachedLayoutEl = document.querySelector<HTMLElement>('.layout');
+  }
+  cachedLayoutEl?.style.setProperty('--toc-width', `${context.state.tocWidth}px`);
 }
 
 export function setActiveHeading(context: AppContext, id: string): void {
@@ -198,6 +219,54 @@ export function setActiveHeading(context: AppContext, id: string): void {
   } else {
     updateActiveTocLink(context);
   }
+}
+
+export function highlightHeading(heading: HTMLElement): void {
+  const currentTimer = headingHighlightTimers.get(heading);
+
+  if (currentTimer !== undefined) {
+    window.clearTimeout(currentTimer);
+  }
+
+  heading.classList.remove('heading-target-highlight');
+  void heading.offsetWidth;
+  heading.classList.add('heading-target-highlight');
+
+  headingHighlightTimers.set(
+    heading,
+    window.setTimeout(() => {
+      heading.classList.remove('heading-target-highlight');
+      headingHighlightTimers.delete(heading);
+    }, 2000),
+  );
+}
+
+export function highlightHashTarget(context: AppContext, scroll = false): boolean {
+  const rawHashId = decodeURIComponent(location.hash.replace(/^#/, ''));
+
+  if (!rawHashId) {
+    return false;
+  }
+
+  const hashId = resolveHeadingAlias(context.state.lang, context.state.activeId, rawHashId);
+  const target = document.getElementById(hashId);
+
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (hashId !== rawHashId) {
+    history.replaceState(null, '', `${location.pathname}${location.search}#${encodeURIComponent(hashId)}`);
+  }
+
+  setActiveHeading(context, hashId);
+
+  if (scroll) {
+    target.scrollIntoView({ block: 'start' });
+  }
+
+  highlightHeading(target);
+  return true;
 }
 
 export function getTocTitle(doc: Doc): string {
@@ -314,15 +383,27 @@ function observeArticleHeadings(context: AppContext, article: HTMLElement): void
     },
   );
 
-  headings.forEach((heading) => headingObserver?.observe(heading));
+  const rawHashId = decodeURIComponent(location.hash.replace(/^#/, ''));
+  const hashId = rawHashId ? resolveHeadingAlias(context.state.lang, context.state.activeId, rawHashId) : '';
+  const hashTarget = hashId ? headings.find((heading) => heading.id === hashId) : undefined;
 
-  const hashId = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (hashId && headings.some((heading) => heading.id === hashId)) {
+  if (hashTarget) {
+    if (hashId !== rawHashId) {
+      history.replaceState(null, '', `${location.pathname}${location.search}#${encodeURIComponent(hashId)}`);
+    }
+
     setActiveHeading(context, hashId);
-    window.setTimeout(() => document.getElementById(hashId)?.scrollIntoView({ block: 'start' }), 0);
-  } else {
-    setActiveHeading(context, headings[0].id);
+    window.setTimeout(() => {
+      hashTarget.scrollIntoView({ block: 'start' });
+      setActiveHeading(context, hashId);
+      highlightHeading(hashTarget);
+      headings.forEach((heading) => headingObserver?.observe(heading));
+    }, 0);
+    return;
   }
+
+  headings.forEach((heading) => headingObserver?.observe(heading));
+  setActiveHeading(context, headings[0].id);
 }
 
 function expandTocAncestors(context: AppContext, id: string): boolean {

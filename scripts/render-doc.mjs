@@ -1,12 +1,15 @@
 import MarkdownIt from 'markdown-it';
 import {
   highlightCode,
-  slugifyHeading,
+  generateHeadingId,
   getDefaultCalloutTitle,
+  getLocaleLabel,
   isLocalAssetSrc,
   isThemeAssetSrc,
   normalizeThemeAssetSrc,
+  splitAssetSrc,
   escapeHtml,
+  buildTocTree,
 } from './markdown-shared.mjs';
 
 const md = new MarkdownIt({
@@ -17,7 +20,9 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 const defaultImageRule = md.renderer.rules.image;
+const defaultHeadingOpenRule = md.renderer.rules.heading_open;
 const alertTypes = new Set(['note', 'tip', 'important', 'warning', 'caution']);
+const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
@@ -40,6 +45,19 @@ md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
   };
 });
 
+md.renderer.rules.heading_open = (tokens, index, options, env, self) => {
+  const rendered = defaultHeadingOpenRule
+    ? defaultHeadingOpenRule(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+  const id = tokens[index].attrGet('id');
+
+  if (!id) {
+    return rendered;
+  }
+
+  return `${rendered}<a class="heading-anchor" href="#${encodeURIComponent(id)}" aria-label="${escapeHtml(getLocaleLabel(env.lang, 'aria.headingAnchor'))}"></a>`;
+};
+
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
   const srcIndex = token.attrIndex('src');
@@ -48,10 +66,11 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      token.attrSet('src', getAssetPath(src, env.basePath));
+      const assetSrc = preferAvifAssetSrc(src);
+      token.attrSet('src', getAssetPath(assetSrc, env.basePath));
 
-      if (isThemeAssetSrc(src)) {
-        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(src), env.basePath));
+      if (isThemeAssetSrc(assetSrc)) {
+        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(assetSrc), env.basePath));
       }
     }
   }
@@ -69,11 +88,27 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
 export function renderDocContent(content, lang, options = {}) {
   const env = { basePath: options.basePath || '/', lang };
   const tokens = md.parse(content, env);
-  const toc = applyHeadingIds(tokens, lang);
+  const slugCounts = new Map();
+  const headings = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token.type !== 'heading_open') {
+      continue;
+    }
+
+    const level = Number(token.tag.slice(1));
+    const inline = tokens[index + 1];
+    const title = inline?.type === 'inline' ? inline.content.trim() : '';
+    const id = generateHeadingId(title || `heading-${index}`, lang, slugCounts);
+    token.attrSet('id', id);
+    headings.push({ id, level, title: title || id });
+  }
 
   return {
-    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath),
-    toc,
+    html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath, options.docId || ''),
+    toc: buildTocTree(headings),
   };
 }
 
@@ -188,67 +223,53 @@ function findClosingToken(tokens, start, closingType) {
   return -1;
 }
 
-function applyHeadingIds(tokens, lang) {
-  const roots = [];
-  const stack = [];
-  const slugCounts = new Map();
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-
-    if (token.type !== 'heading_open') {
-      continue;
-    }
-
-    const level = Number(token.tag.slice(1));
-    const inline = tokens[index + 1];
-    const title = inline?.type === 'inline' ? inline.content.trim() : '';
-    const baseSlug = slugifyHeading(title, lang) || `heading-${index}`;
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    const id = count === 1 ? baseSlug : `${baseSlug}-${count}`;
-    slugCounts.set(baseSlug, count);
-    token.attrSet('id', id);
-
-    const item = {
-      id,
-      title: title || id,
-      level,
-      children: [],
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent) {
-      item.parentId = parent.id;
-      parent.children.push(item);
-    } else {
-      roots.push(item);
-    }
-
-    stack.push(item);
-  }
-
-  return roots;
-}
-
-function rewriteDocLinks(html, basePath) {
+function rewriteDocLinks(html, basePath, docId = '') {
   return html.replace(/href="([^"]+\.md(?:#[^"]*)?)"/g, (match, link) => {
     if (!isLocalAssetSrc(link)) {
       return match;
     }
 
     const [linkPath, hash = ''] = link.split('#');
-    const normalized = linkPath
-      .replace(/^\.\//, '')
-      .replace(/^\/?docs\//, '')
-      .replace(/^(ru|en)\//, '')
-      .replace(/\.md$/i, '');
+    const normalized = normalizeDocLinkPath(linkPath, docId);
 
     return `href="${getDocPath(normalized, basePath)}${hash ? `#${hash}` : ''}"`;
   });
+}
+
+function normalizeDocLinkPath(linkPath, docId) {
+  const normalizedPath = linkPath.replace(/\\/g, '/');
+
+  if (docId && /^\.\.?\//.test(normalizedPath)) {
+    const docDir = docId.split('/').slice(0, -1).join('/');
+    return normalizePathSegments(`${docDir ? `${docDir}/` : ''}${normalizedPath.replace(/\.md$/i, '')}`);
+  }
+
+  return normalizePathSegments(
+    normalizedPath
+      .replace(/^\.\//, '')
+      .replace(/^\/?docs\//, '')
+      .replace(/^(ru|en)\//, '')
+      .replace(/\.md$/i, ''),
+  );
+}
+
+function normalizePathSegments(value) {
+  const segments = [];
+
+  value.split('/').forEach((segment) => {
+    if (!segment || segment === '.') {
+      return;
+    }
+
+    if (segment === '..') {
+      segments.pop();
+      return;
+    }
+
+    segments.push(segment);
+  });
+
+  return segments.join('/');
 }
 
 function applyGithubAlerts(state) {
@@ -372,4 +393,14 @@ function getDocPath(id, basePath) {
 
 function getAssetPath(src, basePath) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
+}
+
+function preferAvifAssetSrc(src) {
+  const { path, suffix } = splitAssetSrc(src);
+
+  if (!avifConvertibleAsset.test(path)) {
+    return src;
+  }
+
+  return `${path.replace(avifConvertibleAsset, '.avif')}${suffix}`;
 }

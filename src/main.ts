@@ -15,11 +15,13 @@ import {
   setCurrentTocItems,
   setInitialActiveHeadingFromToc,
 } from './toc';
-import { getLabel } from './utils/html';
+import { getLabel } from './locales';
 import './styles.css';
 
 let lastCollectedPage = '';
 let currentTocDocKey = '';
+let lastNavKey = '';
+let lastPersistedLang: Lang | undefined;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -85,7 +87,10 @@ function render(): void {
     history.replaceState(null, '', getDocUrl(activeDoc.id));
   }
 
-  localStorage.setItem('xrDocsLang', state.lang);
+  if (state.lang !== lastPersistedLang) {
+    lastPersistedLang = state.lang;
+    localStorage.setItem('xrDocsLang', state.lang);
+  }
   document.documentElement.lang = state.lang;
   document.documentElement.dataset.theme = getResolvedTheme(context);
   document.title = `${activeDoc.title} | xrDocs`;
@@ -107,7 +112,13 @@ function render(): void {
 
   updateShellLabels(context);
   renderTopbarControls(context, activeDoc);
-  renderNav();
+
+  const navKey = `${state.lang}:${state.activeId}:${state.search}`;
+  if (navKey !== lastNavKey) {
+    lastNavKey = navKey;
+    renderNav();
+  }
+
   renderToc();
   collectCurrentPage(activeDoc);
   void renderActiveArticle(activeDoc);

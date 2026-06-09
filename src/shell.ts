@@ -1,12 +1,12 @@
 import type { AppContext } from './app-context';
 import { getDocCacheKey } from './article';
-import { labels } from './locales';
-import { getAssetUrl, navigateToLink } from './routing';
+import { getDocByKey, type Doc } from './docs';
+import { getLabel, labels } from './locales';
+import { basePath, getAssetUrl, navigateToLink, readRouteFromPath } from './routing';
 import { loadSearchIndex } from './search';
 import { getNextThemePreference, getResolvedTheme } from './theme';
-import { getTocTitle, setActiveHeading, startTocResize } from './toc';
-import { escapeHtml, getLabel } from './utils/html';
-import type { Doc } from './docs';
+import { getTocTitle, highlightHashTarget, highlightHeading, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
+import { escapeHtml } from './utils/html';
 import type { ThemePreference } from './state';
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
@@ -75,7 +75,7 @@ export function renderShell(context: AppContext): void {
             </button>
             <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.38-3.37-1.38-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.93.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.96c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.16 10.16 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M12.026 2c-5.509 0-9.974 4.465-9.974 9.974c0 4.406 2.857 8.145 6.821 9.465c.499.09.679-.217.679-.481c0-.237-.008-.865-.011-1.696c-2.775.602-3.361-1.338-3.361-1.338c-.452-1.152-1.107-1.459-1.107-1.459c-.905-.619.069-.605.069-.605c1.002.07 1.527 1.028 1.527 1.028c.89 1.524 2.336 1.084 2.902.829c.091-.645.351-1.085.635-1.334c-2.214-.251-4.542-1.107-4.542-4.93c0-1.087.389-1.979 1.024-2.675c-.101-.253-.446-1.268.099-2.64c0 0 .837-.269 2.742 1.021a9.582 9.582 0 0 1 2.496-.336a9.554 9.554 0 0 1 2.496.336c1.906-1.291 2.742-1.021 2.742-1.021c.545 1.372.203 2.387.099 2.64c.64.696 1.024 1.587 1.024 2.675c0 3.833-2.33 4.675-4.552 4.922c.355.308.675.916.675 1.846c0 1.334-.012 2.41-.012 2.737c0 .267.178.577.687.479C19.146 20.115 22 16.379 22 11.974C22 6.465 17.535 2 12.026 2z" />
               </svg>
             </a>
           </div>
@@ -160,14 +160,18 @@ export function renderTopbarControls(context: AppContext, activeDoc: Doc): void 
 }
 
 function bindShellEvents(context: AppContext): void {
-  document.querySelector<HTMLInputElement>('#searchInput')?.addEventListener('input', (event) => {
+  const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
+
+  searchInput?.addEventListener('input', (event) => {
     context.state.search = (event.currentTarget as HTMLInputElement).value;
     context.renderNav();
   });
 
-  document.querySelector<HTMLInputElement>('#searchInput')?.addEventListener('focus', () => {
+  searchInput?.addEventListener('focus', () => {
     void loadSearchIndex();
   });
+
+  bindTocCollapseToggle(context);
 
   document.querySelector<HTMLElement>('#docNav')?.addEventListener('click', (event) => {
     const toggle = (event.target as Element | null)?.closest<HTMLButtonElement>('button.nav-item-toggle');
@@ -200,6 +204,30 @@ function bindShellEvents(context: AppContext): void {
 
     navigateToLink(event, link, context.state, context.render);
     context.setNavOpen(false);
+  });
+
+  document.querySelector<HTMLElement>('#docArticle')?.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    const link = target?.closest<HTMLAnchorElement>('a');
+
+    if (!link) {
+      return;
+    }
+
+    if (link.classList.contains('heading-anchor')) {
+      if (isPrimaryPlainClick(event)) {
+        event.preventDefault();
+        void copyTextToClipboard(link.href);
+      }
+
+      return;
+    }
+
+    if (!shouldHandleArticleLink(context, event, link)) {
+      return;
+    }
+
+    navigateToLink(event, link, context.state, context.render);
   });
 
   document.querySelector<HTMLButtonElement>('#navToggle')?.addEventListener('click', () => {
@@ -278,6 +306,7 @@ function bindShellEvents(context: AppContext): void {
     setActiveHeading(context, id);
     history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(id)}`);
     heading.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    highlightHeading(heading);
 
     if (window.matchMedia('(max-width: 1100px)').matches) {
       context.setTocOpen(false);
@@ -289,7 +318,7 @@ function bindShellEvents(context: AppContext): void {
   });
 
   document.querySelector<HTMLButtonElement>('#themeToggle')?.addEventListener('click', () => {
-    context.switchTheme(getNextThemePreference(context.state.theme));
+    context.switchTheme(getNextThemePreference(context.state.theme, getResolvedTheme(context)));
   });
 
   window.addEventListener('keydown', (event) => {
@@ -298,6 +327,76 @@ function bindShellEvents(context: AppContext): void {
       context.setTocOpen(false);
     }
   });
+
+  window.addEventListener('hashchange', () => {
+    window.setTimeout(() => {
+      highlightHashTarget(context);
+    }, 0);
+  });
+}
+
+function shouldHandleArticleLink(context: AppContext, event: MouseEvent, link: HTMLAnchorElement): boolean {
+  if (!isPrimaryPlainClick(event)) {
+    return false;
+  }
+
+  if (link.hasAttribute('download') || (link.target && link.target.toLowerCase() !== '_self')) {
+    return false;
+  }
+
+  const href = link.getAttribute('href')?.trim();
+
+  if (!href || href === '#') {
+    return false;
+  }
+
+  const url = new URL(link.href);
+
+  if (url.origin !== location.origin || !url.pathname.startsWith(basePath)) {
+    return false;
+  }
+
+  const route = readRouteFromPath(url.pathname, context.state.lang);
+
+  if (!route) {
+    return false;
+  }
+
+  if (!route.id) {
+    return true;
+  }
+
+  return Boolean(getDocByKey(route.lang, route.id));
+}
+
+function isPrimaryPlainClick(event: MouseEvent): boolean {
+  return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+async function copyTextToClipboard(value: string): Promise<void> {
+  if (!navigator.clipboard?.writeText) {
+    fallbackCopyText(value);
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    fallbackCopyText(value);
+  }
+}
+
+function fallbackCopyText(value: string): void {
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 function getThemeToggleTitle(context: AppContext, theme: ThemePreference): string {
@@ -305,7 +404,7 @@ function getThemeToggleTitle(context: AppContext, theme: ThemePreference): strin
     return getLabel(context.state.lang, 'theme.followSystem').replace('{theme}', getResolvedTheme(context));
   }
 
-  return theme === 'dark' ? getLabel(context.state.lang, 'theme.switchToAuto') : getLabel(context.state.lang, 'theme.switchToDark');
+  return theme === 'dark' ? getLabel(context.state.lang, 'theme.switchToLight') : getLabel(context.state.lang, 'theme.switchToDark');
 }
 
 function getThemeIcon(theme: ThemePreference): string {

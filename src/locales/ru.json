@@ -7,6 +7,7 @@
   "aria.switchTheme": "Переключить тему",
   "aria.resizeContents": "Изменить ширину содержания",
   "aria.toggleSection": "Переключить раздел",
+  "aria.headingAnchor": "Скопировать ссылку на этот заголовок",
   "callout.note": "Примечание",
   "callout.tip": "Совет",
   "callout.important": "Важно",
@@ -31,6 +32,6 @@
   "language.switchToEnglish": "Переключить на английский",
   "language.switchToRussian": "Переключить на русский",
   "theme.followSystem": "Следовать системной теме ({theme})",
-  "theme.switchToAuto": "Переключить на системную тему",
+  "theme.switchToLight": "Переключить на светлую тему",
   "theme.switchToDark": "Переключить на темную тему"
 }

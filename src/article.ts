@@ -1,6 +1,7 @@
 import type { Doc } from './docs';
 import { basePath, getAssetUrl } from './routing';
 import type { TocItem, RenderedDoc } from './types';
+import { buildTocTree } from './utils/toc-builder';
 
 export type { TocItem, RenderedDoc };
 
@@ -80,7 +81,7 @@ export async function fetchRenderedDoc(doc: Doc): Promise<RenderedDoc> {
 export async function renderMarkdownDoc(doc: Doc): Promise<RenderedDoc> {
   const content = await loadDevDocContent(doc);
   const { renderDocContent } = await import('./markdown-renderer');
-  return renderDocContent(content, doc.lang, { basePath });
+  return renderDocContent(content, doc.lang, { basePath, docId: doc.id });
 }
 
 export async function loadDevDocContent(doc: Doc): Promise<string> {
@@ -112,34 +113,15 @@ export function stripFrontmatter(raw: string): string {
 }
 
 export function createTocFromArticle(article: HTMLElement): TocItem[] {
-  const roots: TocItem[] = [];
-  const stack: TocItem[] = [];
+  const headings = article.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
 
-  article.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]').forEach((heading) => {
-    const level = Number(heading.tagName.slice(1));
-    const item: TocItem = {
+  return buildTocTree(
+    Array.from(headings).map((heading) => ({
       id: heading.id,
+      level: Number(heading.tagName.slice(1)),
       title: heading.textContent?.trim() || heading.id,
-      level,
-      children: [],
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent) {
-      item.parentId = parent.id;
-      parent.children.push(item);
-    } else {
-      roots.push(item);
-    }
-
-    stack.push(item);
-  });
-
-  return roots;
+    })),
+  );
 }
 
 export function getDocCacheKey(doc: Doc): string {

@@ -55,6 +55,8 @@
     {
       "label": "prepare:content",
       "type": "shell",
+      "dependsOn": "optimize:assets",
+      "dependsOrder": "sequence",
       "command": "npm run prepare:content",
       "problemMatcher": []
     },
