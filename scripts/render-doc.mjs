@@ -80,10 +80,47 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     : self.renderToken(tokens, index, options);
 };
 
+// Code copy icons. Must match src/markdown-renderer.ts.
+const COPY_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">' +
+  '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>' +
+  '<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>' +
+  '</svg>';
+
+const CHECK_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">' +
+  '<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>' +
+  '</svg>';
+
+const ERROR_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">' +
+  '<path d="M8 1.5a6.5 6.5 0 1 0 0 13A6.5 6.5 0 0 0 8 1.5ZM6.97 5.03a.75.75 0 0 1 1.06 0L8 5l1.03-1.03a.75.75 0 1 1 1.06 1.06L9.06 6.06l1.03 1.03a.75.75 0 1 1-1.06 1.06L8 7.12 6.97 8.15a.75.75 0 0 1-1.06-1.06l1.03-1.03-1.03-1.03a.75.75 0 0 1 1.06-1.06ZM7.25 10.5a.75.75 0 0 1 1.5 0v.25a.75.75 0 0 1-1.5 0v-.25Z"/>' +
+  '</svg>';
+
 md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index];
-  return renderFenceCode(token);
+  return renderFenceCode(token, env.lang || 'en');
 };
+
+function renderFenceCode(token, lang) {
+  const language = token.info.trim().split(/\s+/)[0]?.toLowerCase() || '';
+  const className = language ? ` class="${escapeHtml(md.options.langPrefix + language)}"` : '';
+  const content = highlightCode(token.content, language);
+  const copyLabel = escapeHtml(getLocaleLabel(lang, 'code.copy'));
+  const copiedLabel = escapeHtml(getLocaleLabel(lang, 'code.copied'));
+  const failedLabel = escapeHtml(getLocaleLabel(lang, 'code.copyFailed'));
+
+  return (
+    `<div class="code-block">` +
+    `<pre><code${className}>${content}</code></pre>` +
+    `<button class="code-copy-btn" type="button" aria-label="${copyLabel}" title="${copyLabel}" data-label-copy="${copyLabel}" data-label-copied="${copiedLabel}" data-label-failed="${failedLabel}">` +
+    `<span class="code-copy-icon code-copy-icon-copy" aria-hidden="true">${COPY_ICON_SVG}</span>` +
+    `<span class="code-copy-icon code-copy-icon-check" aria-hidden="true">${CHECK_ICON_SVG}</span>` +
+    `<span class="code-copy-icon code-copy-icon-error" aria-hidden="true">${ERROR_ICON_SVG}</span>` +
+    `</button>` +
+    `</div>\n`
+  );
+}
 
 export function renderDocContent(content, lang, options = {}) {
   const env = { basePath: options.basePath || '/', lang };
@@ -110,14 +147,6 @@ export function renderDocContent(content, lang, options = {}) {
     html: rewriteDocLinks(md.renderer.render(tokens, md.options, env), env.basePath, options.docId || ''),
     toc: buildTocTree(headings),
   };
-}
-
-function renderFenceCode(token) {
-  const language = token.info.trim().split(/\s+/)[0]?.toLowerCase() || '';
-  const className = language ? ` class="${escapeHtml(md.options.langPrefix + language)}"` : '';
-  const content = highlightCode(token.content, language);
-
-  return `<pre><code${className}>${content}</code></pre>\n`;
 }
 
 function applyTableColumnOptions(state) {
