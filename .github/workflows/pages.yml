@@ -30,6 +30,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
     steps:
       - name: Checkout production
         uses: actions/checkout@v6
@@ -55,6 +57,14 @@ jobs:
           key: optimized-assets-production-${{ runner.os }}-${{ hashFiles('package-lock.json', 'scripts/optimize-assets.mjs', 'scripts/assets/xrdocs-icon.png', 'public/**/*.png', 'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp') }}
           restore-keys: |
             optimized-assets-production-${{ runner.os }}-
+
+      - name: Verify production statistics secrets
+        env:
+          VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
+          VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
+        run: |
+          test -n "$VITE_UMAMI_SCRIPT_URL" || { echo "VITE_UMAMI_SCRIPT_URL secret is required for Pages analytics."; exit 1; }
+          test -n "$VITE_UMAMI_WEBSITE_ID" || { echo "VITE_UMAMI_WEBSITE_ID secret is required for Pages analytics."; exit 1; }
 
       - name: Build production
         env:
