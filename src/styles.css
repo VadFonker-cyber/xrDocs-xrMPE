@@ -94,6 +94,39 @@ a {
   display: none;
 }
 
+.layout[data-not-found="true"] {
+  display: block;
+  min-height: 100vh;
+}
+
+.layout[data-not-found="true"] .sidebar,
+.layout[data-not-found="true"] .toc-panel,
+.layout[data-not-found="true"] .topbar,
+.layout[data-not-found="true"] .nav-overlay,
+.layout[data-not-found="true"] .toc-overlay {
+  display: none;
+}
+
+.layout[data-not-found="true"] .workspace {
+  min-height: 100vh;
+  padding: 0;
+}
+
+.layout[data-not-found="true"] .content-grid {
+  display: grid;
+  min-height: 100vh;
+  padding: 0;
+}
+
+.layout[data-not-found="true"] .doc-article {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -1215,6 +1248,50 @@ h1 {
   color: var(--muted);
 }
 
+.not-found {
+  max-width: 620px;
+  text-align: center;
+}
+
+.not-found-code {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.not-found h1 {
+  margin: 0;
+  font-size: 4.5rem;
+  line-height: 0.95;
+}
+
+.not-found p {
+  margin: 18px 0 28px;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.not-found-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  padding: 0 14px;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.not-found-link:hover {
+  border-color: var(--border-strong);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
 .copy-toast {
   position: fixed;
   z-index: 60;
@@ -1344,6 +1421,12 @@ h1 {
     display: block;
   }
 
+  .layout[data-not-found="true"] .toc-panel,
+  .layout[data-not-found="true"] .nav-overlay,
+  .layout[data-not-found="true"] .toc-overlay {
+    display: none;
+  }
+
   .topbar {
     position: sticky;
     z-index: 10;
@@ -1359,6 +1442,14 @@ h1 {
 }
 
 @media (max-width: 640px) {
+  .layout[data-not-found="true"] .doc-article {
+    padding: 24px;
+  }
+
+  .not-found h1 {
+    font-size: 3rem;
+  }
+
   .copy-toast {
     top: 12px;
     right: 12px;

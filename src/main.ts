@@ -1,7 +1,7 @@
 import type { AppContext } from './app-context';
 import { getDocCacheKey, loadActiveArticle } from './article';
-import { docs, getDocsByLang, type Doc, type Lang } from './docs';
-import { updateDocumentMeta } from './document-meta';
+import { docs, getDocById, getDocsByLang, type Doc, type Lang } from './docs';
+import { updateDocumentMeta, updateNotFoundMeta } from './document-meta';
 import { renderNav as renderNavModule } from './nav';
 import { getDocUrl, readRoute } from './routing';
 import { renderShell, renderTopbarControls, updateShellLabels, getShellRefs } from './shell';
@@ -16,6 +16,7 @@ import {
   setInitialActiveHeadingFromToc,
 } from './toc';
 import { getLabel } from './locales';
+import { escapeHtml } from './utils/html';
 import './styles.css';
 
 let lastCollectedPage = '';
@@ -67,15 +68,18 @@ colorSchemeQuery.addEventListener('change', () => {
   if (state.theme === 'auto') {
     document.documentElement.dataset.theme = getResolvedTheme(context);
     const activeDoc = getActiveDoc();
-    if (activeDoc) {
-      renderTopbarControls(context, activeDoc);
-    }
+    renderTopbarControls(context, activeDoc);
     updateThemeAssets(context, appRoot);
   }
 });
 
 function render(): void {
   const activeDoc = getActiveDoc();
+
+  if (state.notFound) {
+    renderNotFound();
+    return;
+  }
 
   if (!activeDoc) {
     return;
@@ -95,6 +99,8 @@ function render(): void {
   document.documentElement.dataset.theme = getResolvedTheme(context);
   document.title = `${activeDoc.title} | xrDocs`;
   updateDocumentMeta(activeDoc);
+  getShellRefs()?.layout?.removeAttribute('data-not-found');
+  setNotFoundChromeHidden(false);
   setNavOpen(state.navOpen);
   setTocOpen(state.tocOpen, false);
 
@@ -120,6 +126,7 @@ function render(): void {
   }
 
   renderToc();
+  clearNotFoundArticleBeforeLoad();
   collectCurrentPage(activeDoc);
   void renderActiveArticle(activeDoc);
 }
@@ -130,6 +137,53 @@ function renderNav(): void {
 
 function renderToc(): void {
   renderTocModule(context);
+}
+
+function renderNotFound(): void {
+  if (state.lang !== lastPersistedLang) {
+    lastPersistedLang = state.lang;
+    localStorage.setItem('xrDocsLang', state.lang);
+  }
+  document.documentElement.lang = state.lang;
+  document.documentElement.dataset.theme = getResolvedTheme(context);
+  document.title = `${getLabel(state.lang, 'notFound.title')} | xrDocs`;
+  updateNotFoundMeta(state.lang);
+  getShellRefs()?.layout?.setAttribute('data-not-found', 'true');
+  setNavOpen(state.navOpen);
+  setTocOpen(state.tocOpen, false);
+
+  const tocDocKey = `404:${state.lang}:${state.requestedPath || state.activeId}`;
+  if (tocDocKey !== currentTocDocKey) {
+    currentTocDocKey = tocDocKey;
+    resetTocState(context);
+  }
+
+  const searchInput = getShellRefs()?.searchInput;
+  if (searchInput) {
+    searchInput.placeholder = getLabel(state.lang, 'search.placeholder');
+    searchInput.value = state.search;
+  }
+
+  updateShellLabels(context);
+  renderTopbarControls(context);
+
+  const navKey = `${state.lang}:404:${state.activeId}:${state.search}`;
+  if (navKey !== lastNavKey) {
+    lastNavKey = navKey;
+    renderNav();
+  }
+
+  setCurrentTocItems([]);
+  renderToc();
+  setNotFoundChromeHidden(true);
+
+  const article = document.querySelector<HTMLElement>('#docArticle');
+  if (article && article.dataset.docKey !== tocDocKey) {
+    article.innerHTML = renderNotFoundArticle();
+    article.dataset.docKey = tocDocKey;
+    article.removeAttribute('data-prerendered');
+    article.removeAttribute('aria-busy');
+  }
 }
 
 async function renderActiveArticle(activeDoc: Doc): Promise<void> {
@@ -152,6 +206,17 @@ function switchLanguage(nextLang: Lang): void {
   }
 
   const previousLang = state.lang;
+
+  if (state.notFound) {
+    state.lang = nextLang;
+    collectEvent('language_switch', {
+      from: previousLang,
+      to: nextLang,
+    });
+    render();
+    return;
+  }
+
   const nextDocs = getDocsByLang(nextLang);
   const nextDoc = nextDocs.find((doc) => doc.id === state.activeId) || nextDocs[0];
 
@@ -187,9 +252,7 @@ function switchTheme(nextTheme: ThemePreference): void {
     resolved_theme: resolved,
   });
   const activeDoc = getActiveDoc();
-  if (activeDoc) {
-    renderTopbarControls(context, activeDoc);
-  }
+  renderTopbarControls(context, activeDoc);
   updateThemeAssets(context, appRoot);
 }
 
@@ -212,12 +275,22 @@ function setTocOpen(open: boolean, persist = true): void {
 }
 
 function getActiveDoc(): Doc | undefined {
+  if (state.notFound) {
+    return undefined;
+  }
+
+  if (state.activeId) {
+    return getDocById(state.activeId, state.lang);
+  }
+
   const langDocs = getDocsByLang(state.lang);
-  return langDocs.find((doc) => doc.id === state.activeId) || langDocs[0] || docs[0];
+  return langDocs[0] || docs[0];
 }
 
-function applyRoute(route: { lang: Lang; id: string }): void {
+function applyRoute(route: { lang: Lang; id: string; notFound?: boolean; requestedPath?: string }): void {
   state.lang = route.lang;
+  state.notFound = Boolean(route.notFound);
+  state.requestedPath = route.requestedPath;
   state.activeId = route.id || getDocsByLang(route.lang)[0]?.id || docs[0].id;
 }
 
@@ -235,4 +308,36 @@ function collectCurrentPage(doc: Doc): void {
     path,
     title: `${doc.title} | xrDocs`,
   });
+}
+
+function clearNotFoundArticleBeforeLoad(): void {
+  const article = document.querySelector<HTMLElement>('#docArticle');
+
+  if (!article?.dataset.docKey?.startsWith('404:')) {
+    return;
+  }
+
+  article.innerHTML = '';
+  article.removeAttribute('data-doc-key');
+  article.removeAttribute('data-prerendered');
+  article.setAttribute('aria-busy', 'true');
+}
+
+function setNotFoundChromeHidden(hidden: boolean): void {
+  document.querySelector<HTMLElement>('.sidebar')?.toggleAttribute('hidden', hidden);
+  document.querySelector<HTMLElement>('.topbar')?.toggleAttribute('hidden', hidden);
+  document.querySelector<HTMLElement>('#tocPanel')?.toggleAttribute('hidden', hidden);
+  document.querySelector<HTMLElement>('#navOverlay')?.toggleAttribute('hidden', hidden);
+  document.querySelector<HTMLElement>('#tocOverlay')?.toggleAttribute('hidden', hidden);
+}
+
+function renderNotFoundArticle(): string {
+  return `
+    <div class="not-found">
+      <p class="not-found-code">404</p>
+      <h1>${escapeHtml(getLabel(state.lang, 'notFound.title'))}</h1>
+      <p>${escapeHtml(getLabel(state.lang, 'notFound.message'))}</p>
+      <a class="not-found-link" href="${getDocUrl('index')}">${escapeHtml(getLabel(state.lang, 'notFound.homeLink'))}</a>
+    </div>
+  `;
 }

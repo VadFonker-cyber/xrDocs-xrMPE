@@ -46,6 +46,7 @@ await Promise.all(pages.map((page) => writePage(page.doc, page.canonicalPath, pa
 const defaultDoc = firstByLang.get('en') || docs[0];
 if (defaultDoc) {
   await writePage(defaultDoc, '/', templatePath);
+  await writeNotFoundPage(defaultDoc, path.join(distDir, '404.html'));
 }
 
 if (!noindex) {
@@ -85,17 +86,56 @@ async function writePage(doc, canonicalPath, outputPath) {
   await fs.promises.writeFile(outputPath, html);
 }
 
-function renderStaticBody(activeDoc) {
+async function writeNotFoundPage(defaultDoc, outputPath) {
+  const copy = readLabels(defaultDoc.lang);
+  const title = `${copy['notFound.title'] || 'Page not found'} | ${siteName}`;
+  const description = copy['notFound.message'] || siteMeta[defaultDoc.lang].description;
+  const body = renderStaticBody(
+    {
+      ...defaultDoc,
+      id: '__404__',
+      title: copy['notFound.title'] || 'Page not found',
+    },
+    { notFound: true },
+  );
+  const patches = [
+    { attribute: 'name', name: 'description', content: description },
+    { attribute: 'property', name: 'og:title', content: title },
+    { attribute: 'property', name: 'og:description', content: description },
+    { attribute: 'property', name: 'og:url', content: siteUrl },
+    { attribute: 'property', name: 'og:locale', content: siteMeta[defaultDoc.lang].locale },
+    { attribute: 'name', name: 'twitter:title', content: title },
+    { attribute: 'name', name: 'twitter:description', content: description },
+    { attribute: 'name', name: 'robots', content: 'noindex, nofollow' },
+  ];
+
+  let html = template
+    .replace(/<html lang="[^"]*"/, `<html lang="${defaultDoc.lang}"`)
+    .replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
+    .replace(/<div id="app"><\/div>/, `<div id="app">${body}</div>`);
+
+  html = applyMetaPatches(html, patches, []);
+
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.promises.writeFile(outputPath, html);
+}
+
+function renderStaticBody(activeDoc, options = {}) {
   const copy = readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
-  const docKey = getDocKey(activeDoc);
+  const article = options.notFound ? renderStaticNotFoundArticle(activeDoc.lang) : renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
+  const docKey = options.notFound ? `404:${activeDoc.lang}` : getDocKey(activeDoc);
+  const layoutAttributes = options.notFound ? ' data-not-found="true"' : '';
+  const hiddenAttribute = options.notFound ? ' hidden' : '';
+  const articleAttributes = options.notFound
+    ? ` data-doc-key="${escapeHtml(docKey)}"`
+    : ` data-doc-key="${escapeHtml(docKey)}" data-prerendered="true"`;
 
   return `
-    <div class="layout" data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
-      <button class="nav-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeNavigation'] || '')}"></button>
-      <button class="toc-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeContents'] || '')}"></button>
-      <aside class="sidebar" aria-label="${escapeHtml(copy['aria.nav'] || 'Documentation navigation')}">
+    <div class="layout"${layoutAttributes} data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
+      <button class="nav-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeNavigation'] || '')}"${hiddenAttribute}></button>
+      <button class="toc-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeContents'] || '')}"${hiddenAttribute}></button>
+      <aside class="sidebar" aria-label="${escapeHtml(copy['aria.nav'] || 'Documentation navigation')}"${hiddenAttribute}>
         <div class="brand">
           <picture>
             <source srcset="${getAssetPath('./xrdocs-brand.webp')}" type="image/webp" />
@@ -115,7 +155,7 @@ function renderStaticBody(activeDoc) {
         <nav class="doc-nav">${nav}</nav>
       </aside>
       <main class="workspace">
-        <section class="topbar">
+        <section class="topbar"${hiddenAttribute}>
           <div class="topbar-controls">
             <button class="control-button nav-toggle" type="button" aria-label="${escapeHtml(copy['menu.label'] || 'Menu')}" aria-expanded="false">
               <span class="menu-icon" aria-hidden="true"></span>
@@ -130,12 +170,25 @@ function renderStaticBody(activeDoc) {
           </div>
         </section>
         <section class="content-grid">
-          <article id="docArticle" class="doc-article" data-doc-key="${escapeHtml(docKey)}" data-prerendered="true">${article}</article>
+          <article id="docArticle" class="doc-article"${articleAttributes}>${article}</article>
         </section>
       </main>
-      <aside class="toc-panel" aria-label="${escapeHtml(copy['toc.title'] || 'Contents')}">
+      <aside class="toc-panel" aria-label="${escapeHtml(copy['toc.title'] || 'Contents')}"${hiddenAttribute}>
         <div class="toc-header"><h2>${escapeHtml(copy['toc.title'] || 'Contents')}</h2></div>
       </aside>
+    </div>
+  `;
+}
+
+function renderStaticNotFoundArticle(lang) {
+  const copy = readLabels(lang);
+
+  return `
+    <div class="not-found">
+      <p class="not-found-code">404</p>
+      <h1>${escapeHtml(copy['notFound.title'] || 'Page not found')}</h1>
+      <p>${escapeHtml(copy['notFound.message'] || '')}</p>
+      <a class="not-found-link" href="${getDocPath('index')}">${escapeHtml(copy['notFound.homeLink'] || 'Go to documentation home')}</a>
     </div>
   `;
 }

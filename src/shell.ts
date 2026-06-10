@@ -1,6 +1,6 @@
 import type { AppContext } from './app-context';
 import { getDocCacheKey } from './article';
-import { getDocByKey, type Doc } from './docs';
+import type { Doc } from './docs';
 import { getLabel, labels } from './locales';
 import { basePath, getAssetUrl, navigateToLink, readRouteFromPath } from './routing';
 import { loadSearchIndex } from './search';
@@ -148,7 +148,7 @@ export function updateShellLabels(context: AppContext): void {
   shellRefs?.themeToggle?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchTheme'));
 }
 
-export function renderTopbarControls(context: AppContext, activeDoc: Doc): void {
+export function renderTopbarControls(context: AppContext, activeDoc?: Doc): void {
   const { languageToggle, navToggle, themeToggle, tocToggle } = shellRefs ?? {};
 
   if (languageToggle) {
@@ -171,7 +171,7 @@ export function renderTopbarControls(context: AppContext, activeDoc: Doc): void 
   }
 
   if (tocToggle) {
-    const title = getTocTitle(activeDoc);
+    const title = activeDoc ? getTocTitle(activeDoc) : getLabel(context.state.lang, 'toc.toggle');
     tocToggle.setAttribute('aria-label', title);
     tocToggle.setAttribute('title', title);
     tocToggle.setAttribute('aria-expanded', String(context.state.tocOpen));
@@ -392,11 +392,7 @@ function shouldHandleArticleLink(context: AppContext, event: MouseEvent, link: H
     return false;
   }
 
-  if (!route.id) {
-    return true;
-  }
-
-  return Boolean(getDocByKey(route.lang, route.id));
+  return true;
 }
 
 function isPrimaryPlainClick(event: MouseEvent): boolean {

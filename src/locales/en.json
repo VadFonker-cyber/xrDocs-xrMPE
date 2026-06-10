@@ -36,5 +36,8 @@
   "language.switchToRussian": "Switch to Russian",
   "theme.followSystem": "Follow system theme ({theme})",
   "theme.switchToLight": "Switch to light theme",
-  "theme.switchToDark": "Switch to dark theme"
+  "theme.switchToDark": "Switch to dark theme",
+  "notFound.title": "Page not found",
+  "notFound.message": "The page you opened does not exist or has been moved.",
+  "notFound.homeLink": "Go to documentation home"
 }

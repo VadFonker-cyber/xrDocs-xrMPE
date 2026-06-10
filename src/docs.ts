@@ -38,6 +38,7 @@ export const navTree = manifest.nav;
 // Precomputed indexes — built once at module init for O(1) lookups
 const _docsByLang = new Map<Lang, Doc[]>();
 const _docByKey = new Map<string, Doc>();
+const _docIds = new Set<string>();
 
 for (const doc of docs) {
   const langDocs = _docsByLang.get(doc.lang);
@@ -47,6 +48,7 @@ for (const doc of docs) {
     _docsByLang.set(doc.lang, [doc]);
   }
   _docByKey.set(`${doc.lang}:${doc.id}`, doc);
+  _docIds.add(doc.id);
 }
 
 // Keep in sync with scripts/content-model.mjs for generated manifest ordering.
@@ -72,6 +74,14 @@ export function getDocsByLang(lang: Lang): Doc[] {
 
 export function getDocByKey(lang: Lang, id: string): Doc | undefined {
   return _docByKey.get(`${lang}:${id}`);
+}
+
+export function getDocById(id: string, lang: Lang): Doc | undefined {
+  return getDocByKey(lang, id) || docs.find((doc) => doc.id === id);
+}
+
+export function hasDocId(id: string): boolean {
+  return _docIds.has(id);
 }
 
 export function findNavNodePath(lang: Lang, id: string): NavNode[] {
