@@ -1,16 +1,18 @@
-import { docs, getDocsByLang, type Lang } from './docs';
-import { readSavedLang, type AppState } from './state';
+import { docs, getDocsByLang, hasDocId, type Lang } from './docs';
+import { detectBrowserLang, readSavedLang, type AppState } from './state';
 
 export type Route = {
   lang: Lang;
   id: string;
+  notFound?: boolean;
+  requestedPath?: string;
 };
 
 export const basePath = normalizeBasePath(import.meta.env.BASE_URL);
 const defaultLang: Lang = 'en';
 
 export function readRoute(): Route {
-  const savedLang = readSavedLang() || defaultLang;
+  const savedLang = readSavedLang() || detectBrowserLang();
 
   if (location.hash.startsWith('#/')) {
     const value = decodeURIComponent(location.hash.replace(/^#\/?/, '')).replace(/\.md$/, '');
@@ -18,6 +20,8 @@ export function readRoute(): Route {
     return {
       lang: savedLang,
       id: value,
+      notFound: Boolean(value && !hasDocId(value)),
+      requestedPath: value,
     };
   }
 
@@ -39,14 +43,17 @@ export function readRoute(): Route {
   };
 }
 
-export function readRouteFromPath(pathname: string, lang: Lang = readSavedLang() || defaultLang): Route | undefined {
+export function readRouteFromPath(pathname: string, lang: Lang = readSavedLang() || detectBrowserLang() || defaultLang): Route | undefined {
   const path = stripBasePath(decodeURIComponent(pathname))
     .replace(/\/index\.html$/, '/')
     .replace(/^\/+|\/+$/g, '');
+  const id = path.replace(/\.md$/i, '');
 
   return {
     lang,
-    id: path.replace(/\.md$/i, ''),
+    id,
+    notFound: Boolean(id && !hasDocId(id)),
+    requestedPath: pathname,
   };
 }
 
@@ -89,7 +96,10 @@ export function navigateToLink(event: MouseEvent, link: HTMLAnchorElement, state
   }
 
   event.preventDefault();
+  state.lang = route.lang;
   state.activeId = route.id || getDocsByLang(route.lang)[0]?.id || docs[0].id;
+  state.notFound = Boolean(route.notFound);
+  state.requestedPath = route.requestedPath;
   history.pushState(null, '', `${url.pathname}${url.hash}`);
   render();
 }

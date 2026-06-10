@@ -94,6 +94,39 @@ a {
   display: none;
 }
 
+.layout[data-not-found="true"] {
+  display: block;
+  min-height: 100vh;
+}
+
+.layout[data-not-found="true"] .sidebar,
+.layout[data-not-found="true"] .toc-panel,
+.layout[data-not-found="true"] .topbar,
+.layout[data-not-found="true"] .nav-overlay,
+.layout[data-not-found="true"] .toc-overlay {
+  display: none;
+}
+
+.layout[data-not-found="true"] .workspace {
+  min-height: 100vh;
+  padding: 0;
+}
+
+.layout[data-not-found="true"] .content-grid {
+  display: grid;
+  min-height: 100vh;
+  padding: 0;
+}
+
+.layout[data-not-found="true"] .doc-article {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -892,6 +925,127 @@ h1 {
   padding: 16px;
 }
 
+/* Wrapper added by renderFenceCode to enable the copy button positioning */
+.doc-article .code-block {
+  position: relative;
+  margin: 16px 0;
+}
+
+.doc-article .code-block > pre {
+  margin: 0;
+  padding-right: 54px;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.code-block:hover .code-copy-btn,
+.code-copy-btn:focus-visible,
+.code-copy-btn[data-copy-state] {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.code-copy-btn:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
+.code-copy-btn:active {
+  transform: translateY(1px);
+}
+
+.code-copy-icon {
+  display: none;
+  width: 14px;
+  height: 14px;
+}
+
+.code-copy-icon svg {
+  display: block;
+}
+
+.code-copy-icon-copy {
+  display: block;
+}
+
+.code-copy-btn[data-copy-state="copied"] .code-copy-icon-copy,
+.code-copy-btn[data-copy-state="failed"] .code-copy-icon-copy,
+.code-copy-btn[data-copy-state="copied-leaving"] .code-copy-icon-copy,
+.code-copy-btn[data-copy-state="failed-leaving"] .code-copy-icon-copy {
+  display: none;
+}
+
+.code-copy-btn[data-copy-state="copied"] .code-copy-icon-check,
+.code-copy-btn[data-copy-state="failed"] .code-copy-icon-error,
+.code-copy-btn[data-copy-state="copied-leaving"] .code-copy-icon-check,
+.code-copy-btn[data-copy-state="failed-leaving"] .code-copy-icon-error {
+  display: block;
+}
+
+.code-copy-btn[data-copy-state="pending"] {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.code-copy-btn[data-copy-state="copied"] {
+  opacity: 1;
+  color: #4ade80;
+  border-color: #4ade80;
+  background: color-mix(in srgb, #4ade80 14%, var(--surface-strong));
+}
+
+.code-copy-btn[data-copy-state="failed"] {
+  opacity: 1;
+  color: #f87171;
+  border-color: #f87171;
+  background: color-mix(in srgb, #f87171 14%, var(--surface-strong));
+}
+
+.code-copy-btn[data-copy-state="copied-leaving"],
+.code-copy-btn[data-copy-state="failed-leaving"] {
+  opacity: 0;
+}
+
+.code-copy-btn[data-copy-state="copied-leaving"] {
+  color: #4ade80;
+  border-color: #4ade80;
+  background: color-mix(in srgb, #4ade80 8%, var(--surface-strong));
+}
+
+.code-copy-btn[data-copy-state="failed-leaving"] {
+  color: #f87171;
+  border-color: #f87171;
+  background: color-mix(in srgb, #f87171 8%, var(--surface-strong));
+}
+
 .doc-article pre code {
   border: 0;
   background: transparent;
@@ -1094,6 +1248,96 @@ h1 {
   color: var(--muted);
 }
 
+.not-found {
+  max-width: 620px;
+  text-align: center;
+}
+
+.not-found-code {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.not-found h1 {
+  margin: 0;
+  font-size: 4.5rem;
+  line-height: 0.95;
+}
+
+.not-found p {
+  margin: 18px 0 28px;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.not-found-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  padding: 0 14px;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.not-found-link:hover {
+  border-color: var(--border-strong);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.copy-toast {
+  position: fixed;
+  z-index: 60;
+  top: 18px;
+  right: 18px;
+  max-width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.26s ease;
+}
+
+.copy-toast[data-visible="true"] {
+  opacity: 1;
+}
+
+.copy-toast[data-variant="success"] {
+  border-color: #4ade80;
+}
+
+.copy-toast[data-variant="error"] {
+  border-color: #f87171;
+}
+
+@media (hover: none), (pointer: coarse), (max-width: 1100px) {
+  .code-copy-btn {
+    width: 38px;
+    height: 38px;
+    opacity: 1;
+  }
+
+  .doc-article .code-block > pre {
+    padding-top: 56px;
+    padding-right: 16px;
+  }
+}
+
 @media (max-width: 1100px) {
   .layout {
     grid-template-columns: 1fr;
@@ -1177,6 +1421,12 @@ h1 {
     display: block;
   }
 
+  .layout[data-not-found="true"] .toc-panel,
+  .layout[data-not-found="true"] .nav-overlay,
+  .layout[data-not-found="true"] .toc-overlay {
+    display: none;
+  }
+
   .topbar {
     position: sticky;
     z-index: 10;
@@ -1192,6 +1442,21 @@ h1 {
 }
 
 @media (max-width: 640px) {
+  .layout[data-not-found="true"] .doc-article {
+    padding: 24px;
+  }
+
+  .not-found h1 {
+    font-size: 3rem;
+  }
+
+  .copy-toast {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
+
   .topbar {
     gap: 14px;
   }

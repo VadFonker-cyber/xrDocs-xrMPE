@@ -1,6 +1,6 @@
 import type { AppContext } from './app-context';
 import { getDocCacheKey } from './article';
-import { getDocByKey, type Doc } from './docs';
+import type { Doc } from './docs';
 import { getLabel, labels } from './locales';
 import { basePath, getAssetUrl, navigateToLink, readRouteFromPath } from './routing';
 import { loadSearchIndex } from './search';
@@ -10,8 +10,15 @@ import { escapeHtml } from './utils/html';
 import type { ThemePreference } from './state';
 
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
+const codeCopyFeedbackMs = 2200;
+const codeCopyErrorFeedbackMs = 3000;
+const copyToastVisibleMs = 2400;
+const copyFeedbackFadeMs = 220;
+const copyToastFadeMs = 260;
 
 type ShellRefs = {
+  layout: HTMLElement | null;
+  searchInput: HTMLInputElement | null;
   languageToggle: HTMLButtonElement | null;
   navToggle: HTMLButtonElement | null;
   themeToggle: HTMLButtonElement | null;
@@ -23,6 +30,14 @@ type ShellRefs = {
 };
 
 let shellRefs: ShellRefs | null = null;
+let nextCodeCopyRequestId = 0;
+let copyToastTimer: number | undefined;
+const codeCopyRequestIds = new WeakMap<HTMLButtonElement, number>();
+const codeCopyResetTimers = new WeakMap<HTMLButtonElement, number>();
+
+export function getShellRefs(): ShellRefs | null {
+  return shellRefs;
+}
 
 export function renderShell(context: AppContext): void {
   const copy = labels[context.state.lang];
@@ -103,12 +118,16 @@ export function renderShell(context: AppContext): void {
         </label>
         <nav id="tocNav" class="toc-nav"></nav>
       </aside>
+
+      <div id="copyToast" class="copy-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
     </div>
   `;
 
   bindShellEvents(context);
 
   shellRefs = {
+    layout: document.querySelector('.layout'),
+    searchInput: document.querySelector('#searchInput'),
     languageToggle: document.querySelector('#languageToggle'),
     navToggle: document.querySelector('#navToggle'),
     themeToggle: document.querySelector('#themeToggle'),
@@ -129,7 +148,7 @@ export function updateShellLabels(context: AppContext): void {
   shellRefs?.themeToggle?.setAttribute('aria-label', getLabel(context.state.lang, 'aria.switchTheme'));
 }
 
-export function renderTopbarControls(context: AppContext, activeDoc: Doc): void {
+export function renderTopbarControls(context: AppContext, activeDoc?: Doc): void {
   const { languageToggle, navToggle, themeToggle, tocToggle } = shellRefs ?? {};
 
   if (languageToggle) {
@@ -152,7 +171,7 @@ export function renderTopbarControls(context: AppContext, activeDoc: Doc): void 
   }
 
   if (tocToggle) {
-    const title = getTocTitle(activeDoc);
+    const title = activeDoc ? getTocTitle(activeDoc) : getLabel(context.state.lang, 'toc.toggle');
     tocToggle.setAttribute('aria-label', title);
     tocToggle.setAttribute('title', title);
     tocToggle.setAttribute('aria-expanded', String(context.state.tocOpen));
@@ -208,6 +227,17 @@ function bindShellEvents(context: AppContext): void {
 
   document.querySelector<HTMLElement>('#docArticle')?.addEventListener('click', (event) => {
     const target = event.target as Element | null;
+
+    const copyBtn = target?.closest<HTMLButtonElement>('.code-copy-btn');
+    if (copyBtn) {
+      if (isPrimaryPlainClick(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleCodeCopyButton(copyBtn, context);
+      }
+      return;
+    }
+
     const link = target?.closest<HTMLAnchorElement>('a');
 
     if (!link) {
@@ -362,31 +392,138 @@ function shouldHandleArticleLink(context: AppContext, event: MouseEvent, link: H
     return false;
   }
 
-  if (!route.id) {
-    return true;
-  }
-
-  return Boolean(getDocByKey(route.lang, route.id));
+  return true;
 }
 
 function isPrimaryPlainClick(event: MouseEvent): boolean {
   return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
-async function copyTextToClipboard(value: string): Promise<void> {
-  if (!navigator.clipboard?.writeText) {
-    fallbackCopyText(value);
+async function handleCodeCopyButton(copyBtn: HTMLButtonElement, context: AppContext): Promise<void> {
+  const code = copyBtn.closest('.code-block')?.querySelector('code');
+
+  if (!code) {
     return;
+  }
+
+  const requestId = nextCodeCopyRequestId + 1;
+  nextCodeCopyRequestId = requestId;
+  codeCopyRequestIds.set(copyBtn, requestId);
+  clearCodeCopyResetTimer(copyBtn);
+  setCodeCopyState(copyBtn, 'pending', copyBtn.dataset.labelCopy ?? getLabel(context.state.lang, 'code.copy'));
+
+  const copied = await copyTextToClipboard(code.textContent ?? '');
+
+  if (codeCopyRequestIds.get(copyBtn) !== requestId) {
+    return;
+  }
+
+  const label = copied
+    ? copyBtn.dataset.labelCopied ?? getLabel(context.state.lang, 'code.copied')
+    : copyBtn.dataset.labelFailed ?? getLabel(context.state.lang, 'code.copyFailed');
+
+  setCodeCopyState(copyBtn, copied ? 'copied' : 'failed', label);
+
+  if (!copied) {
+    showCopyToast(label, 'error');
+  }
+
+  const resetTimer = window.setTimeout(() => {
+    if (codeCopyRequestIds.get(copyBtn) === requestId) {
+      fadeOutCodeCopyButton(copyBtn, context, requestId);
+    }
+  }, copied ? codeCopyFeedbackMs : codeCopyErrorFeedbackMs);
+
+  codeCopyResetTimers.set(copyBtn, resetTimer);
+}
+
+function setCodeCopyState(copyBtn: HTMLButtonElement, state: 'pending' | 'copied' | 'failed', label: string): void {
+  copyBtn.dataset.copyState = state;
+  copyBtn.setAttribute('aria-label', label);
+  copyBtn.setAttribute('title', label);
+}
+
+function resetCodeCopyButton(copyBtn: HTMLButtonElement, context: AppContext): void {
+  clearCodeCopyResetTimer(copyBtn);
+  copyBtn.removeAttribute('data-copy-state');
+  const copyLabel = copyBtn.dataset.labelCopy ?? getLabel(context.state.lang, 'code.copy');
+  copyBtn.setAttribute('aria-label', copyLabel);
+  copyBtn.setAttribute('title', copyLabel);
+}
+
+function fadeOutCodeCopyButton(copyBtn: HTMLButtonElement, context: AppContext, requestId: number): void {
+  const previousState = copyBtn.dataset.copyState;
+
+  if (previousState !== 'copied' && previousState !== 'failed') {
+    resetCodeCopyButton(copyBtn, context);
+    return;
+  }
+
+  copyBtn.dataset.copyState = previousState === 'copied' ? 'copied-leaving' : 'failed-leaving';
+
+  const fadeTimer = window.setTimeout(() => {
+    if (codeCopyRequestIds.get(copyBtn) === requestId) {
+      resetCodeCopyButton(copyBtn, context);
+    }
+  }, copyFeedbackFadeMs);
+
+  codeCopyResetTimers.set(copyBtn, fadeTimer);
+}
+
+function clearCodeCopyResetTimer(copyBtn: HTMLButtonElement): void {
+  const resetTimer = codeCopyResetTimers.get(copyBtn);
+
+  if (resetTimer !== undefined) {
+    window.clearTimeout(resetTimer);
+    codeCopyResetTimers.delete(copyBtn);
+  }
+}
+
+function showCopyToast(message: string, variant: 'success' | 'error'): void {
+  const toast = document.querySelector<HTMLElement>('#copyToast');
+
+  if (!toast) {
+    return;
+  }
+
+  if (copyToastTimer !== undefined) {
+    window.clearTimeout(copyToastTimer);
+    copyToastTimer = undefined;
+  }
+
+  toast.hidden = false;
+  toast.textContent = message;
+  toast.dataset.variant = variant;
+
+  window.requestAnimationFrame(() => {
+    toast.dataset.visible = 'true';
+  });
+
+  copyToastTimer = window.setTimeout(() => {
+    toast.dataset.visible = 'false';
+    copyToastTimer = window.setTimeout(() => {
+      toast.hidden = true;
+      toast.textContent = '';
+      delete toast.dataset.variant;
+      copyToastTimer = undefined;
+    }, copyToastFadeMs);
+  }, copyToastVisibleMs);
+}
+
+async function copyTextToClipboard(value: string): Promise<boolean> {
+  if (!navigator.clipboard?.writeText) {
+    return fallbackCopyText(value);
   }
 
   try {
     await navigator.clipboard.writeText(value);
+    return true;
   } catch {
-    fallbackCopyText(value);
+    return fallbackCopyText(value);
   }
 }
 
-function fallbackCopyText(value: string): void {
+function fallbackCopyText(value: string): boolean {
   const textarea = document.createElement('textarea');
   textarea.value = value;
   textarea.setAttribute('readonly', '');
@@ -395,8 +532,14 @@ function fallbackCopyText(value: string): void {
   textarea.style.top = '0';
   document.body.append(textarea);
   textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
+
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
 }
 
 function getThemeToggleTitle(context: AppContext, theme: ThemePreference): string {

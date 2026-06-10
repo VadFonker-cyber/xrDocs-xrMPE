@@ -8,6 +8,8 @@ export type AppState = {
   search: string;
   lang: Lang;
   activeId: string;
+  notFound: boolean;
+  requestedPath?: string;
   navOpen: boolean;
   tocOpen: boolean;
   tocSearchOpen: boolean;
@@ -22,11 +24,13 @@ export type AppState = {
 export const minTocWidth = 280;
 export const maxTocWidth = 560;
 
-export function createAppState(initialRoute: { lang: Lang; id: string }): AppState {
+export function createAppState(initialRoute: { lang: Lang; id: string; notFound?: boolean; requestedPath?: string }): AppState {
   return {
     search: '',
     lang: initialRoute.lang,
     activeId: initialRoute.id || getDocsByLang(initialRoute.lang)[0]?.id || docs[0].id,
+    notFound: Boolean(initialRoute.notFound),
+    requestedPath: initialRoute.requestedPath,
     navOpen: false,
     tocOpen: readTocOpen(),
     tocSearchOpen: false,

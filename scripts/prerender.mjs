@@ -3,7 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readContentModel } from './content-model.mjs';
-import { renderDocContent } from './render-doc.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
 import { findNodePath, getNavNodeKey, normalizeBasePath } from './shared-utils.mjs';
@@ -15,11 +14,25 @@ const templatePath = path.join(distDir, 'index.html');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/');
 const noindex = isTruthyEnv(process.env.NOINDEX);
+const labelsCache = new Map();
 
 const template = fs.readFileSync(templatePath, 'utf8');
 const { docs, nav } = readContentModel(docsDir);
 const gitUpdatedAtByPath = getGitUpdatedAtByPath(docs.map((doc) => doc.path));
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
+
+/**
+ * Pre-rendered HTML loaded from dist/doc-content — written by generate-content-data.mjs
+ * earlier in the build pipeline. Avoids re-running MarkdownIt for every page.
+ */
+const renderedHtmlByKey = new Map(
+  docs.map((doc) => {
+    const jsonPath = path.join(distDir, 'doc-content', doc.lang, ...doc.id.split('/'), 'index.json');
+    const html = JSON.parse(fs.readFileSync(jsonPath, 'utf8')).html ?? '';
+    return [getDocKey(doc), html];
+  }),
+);
+
 const pages = getCanonicalDocs()
   .filter((doc) => doc.id !== 'index')
   .map((doc) => ({
@@ -33,6 +46,7 @@ await Promise.all(pages.map((page) => writePage(page.doc, page.canonicalPath, pa
 const defaultDoc = firstByLang.get('en') || docs[0];
 if (defaultDoc) {
   await writePage(defaultDoc, '/', templatePath);
+  await writeNotFoundPage(defaultDoc, path.join(distDir, '404.html'));
 }
 
 if (!noindex) {
@@ -72,17 +86,56 @@ async function writePage(doc, canonicalPath, outputPath) {
   await fs.promises.writeFile(outputPath, html);
 }
 
-function renderStaticBody(activeDoc) {
+async function writeNotFoundPage(defaultDoc, outputPath) {
+  const copy = readLabels(defaultDoc.lang);
+  const title = `${copy['notFound.title'] || 'Page not found'} | ${siteName}`;
+  const description = copy['notFound.message'] || siteMeta[defaultDoc.lang].description;
+  const body = renderStaticBody(
+    {
+      ...defaultDoc,
+      id: '__404__',
+      title: copy['notFound.title'] || 'Page not found',
+    },
+    { notFound: true },
+  );
+  const patches = [
+    { attribute: 'name', name: 'description', content: description },
+    { attribute: 'property', name: 'og:title', content: title },
+    { attribute: 'property', name: 'og:description', content: description },
+    { attribute: 'property', name: 'og:url', content: siteUrl },
+    { attribute: 'property', name: 'og:locale', content: siteMeta[defaultDoc.lang].locale },
+    { attribute: 'name', name: 'twitter:title', content: title },
+    { attribute: 'name', name: 'twitter:description', content: description },
+    { attribute: 'name', name: 'robots', content: 'noindex, nofollow' },
+  ];
+
+  let html = template
+    .replace(/<html lang="[^"]*"/, `<html lang="${defaultDoc.lang}"`)
+    .replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
+    .replace(/<div id="app"><\/div>/, `<div id="app">${body}</div>`);
+
+  html = applyMetaPatches(html, patches, []);
+
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.promises.writeFile(outputPath, html);
+}
+
+function renderStaticBody(activeDoc, options = {}) {
   const copy = readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath, docId: activeDoc.id }).html;
-  const docKey = `${activeDoc.lang}:${activeDoc.id}`;
+  const article = options.notFound ? renderStaticNotFoundArticle(activeDoc.lang) : renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
+  const docKey = options.notFound ? `404:${activeDoc.lang}` : getDocKey(activeDoc);
+  const layoutAttributes = options.notFound ? ' data-not-found="true"' : '';
+  const hiddenAttribute = options.notFound ? ' hidden' : '';
+  const articleAttributes = options.notFound
+    ? ` data-doc-key="${escapeHtml(docKey)}"`
+    : ` data-doc-key="${escapeHtml(docKey)}" data-prerendered="true"`;
 
   return `
-    <div class="layout" data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
-      <button class="nav-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeNavigation'] || '')}"></button>
-      <button class="toc-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeContents'] || '')}"></button>
-      <aside class="sidebar" aria-label="${escapeHtml(copy['aria.nav'] || 'Documentation navigation')}">
+    <div class="layout"${layoutAttributes} data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
+      <button class="nav-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeNavigation'] || '')}"${hiddenAttribute}></button>
+      <button class="toc-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeContents'] || '')}"${hiddenAttribute}></button>
+      <aside class="sidebar" aria-label="${escapeHtml(copy['aria.nav'] || 'Documentation navigation')}"${hiddenAttribute}>
         <div class="brand">
           <picture>
             <source srcset="${getAssetPath('./xrdocs-brand.webp')}" type="image/webp" />
@@ -102,7 +155,7 @@ function renderStaticBody(activeDoc) {
         <nav class="doc-nav">${nav}</nav>
       </aside>
       <main class="workspace">
-        <section class="topbar">
+        <section class="topbar"${hiddenAttribute}>
           <div class="topbar-controls">
             <button class="control-button nav-toggle" type="button" aria-label="${escapeHtml(copy['menu.label'] || 'Menu')}" aria-expanded="false">
               <span class="menu-icon" aria-hidden="true"></span>
@@ -117,12 +170,25 @@ function renderStaticBody(activeDoc) {
           </div>
         </section>
         <section class="content-grid">
-          <article id="docArticle" class="doc-article" data-doc-key="${escapeHtml(docKey)}" data-prerendered="true">${article}</article>
+          <article id="docArticle" class="doc-article"${articleAttributes}>${article}</article>
         </section>
       </main>
-      <aside class="toc-panel" aria-label="${escapeHtml(copy['toc.title'] || 'Contents')}">
+      <aside class="toc-panel" aria-label="${escapeHtml(copy['toc.title'] || 'Contents')}"${hiddenAttribute}>
         <div class="toc-header"><h2>${escapeHtml(copy['toc.title'] || 'Contents')}</h2></div>
       </aside>
+    </div>
+  `;
+}
+
+function renderStaticNotFoundArticle(lang) {
+  const copy = readLabels(lang);
+
+  return `
+    <div class="not-found">
+      <p class="not-found-code">404</p>
+      <h1>${escapeHtml(copy['notFound.title'] || 'Page not found')}</h1>
+      <p>${escapeHtml(copy['notFound.message'] || '')}</p>
+      <a class="not-found-link" href="${getDocPath('index')}">${escapeHtml(copy['notFound.homeLink'] || 'Go to documentation home')}</a>
     </div>
   `;
 }
@@ -277,13 +343,19 @@ function formatSitemapDate(value) {
 }
 
 function readLabels(lang) {
+  if (labelsCache.has(lang)) return labelsCache.get(lang);
+
   const localePath = path.join(rootDir, 'src', 'locales', `${lang}.json`);
+  const result = fs.existsSync(localePath)
+    ? JSON.parse(fs.readFileSync(localePath, 'utf8'))
+    : {};
 
-  if (!fs.existsSync(localePath)) {
-    return {};
-  }
+  labelsCache.set(lang, result);
+  return result;
+}
 
-  return JSON.parse(fs.readFileSync(localePath, 'utf8'));
+function getDocKey(doc) {
+  return `${doc.lang}:${doc.id}`;
 }
 
 /**

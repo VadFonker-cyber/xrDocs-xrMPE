@@ -29,9 +29,15 @@
   "toc.expandAll": "Развернуть все",
   "toc.empty": "Не найдено ни одного заголовка.",
   "toc.noResults": "Ничего не найдено в этой статье.",
+  "code.copy": "Скопировать код",
+  "code.copied": "Скопировано!",
+  "code.copyFailed": "Не удалось скопировать",
   "language.switchToEnglish": "Переключить на английский",
   "language.switchToRussian": "Переключить на русский",
   "theme.followSystem": "Следовать системной теме ({theme})",
   "theme.switchToLight": "Переключить на светлую тему",
-  "theme.switchToDark": "Переключить на темную тему"
+  "theme.switchToDark": "Переключить на темную тему",
+  "notFound.title": "Страница не найдена",
+  "notFound.message": "Страница, которую вы открыли, не существует или была перемещена.",
+  "notFound.homeLink": "Перейти на главную документации"
 }
