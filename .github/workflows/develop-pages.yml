@@ -12,6 +12,11 @@ on:
           - deploy
           - remove
 
+env:
+  NPM_CONFIG_AUDIT: false
+  NPM_CONFIG_FUND: false
+  NPM_CONFIG_PREFER_OFFLINE: true
+
 permissions:
   contents: read
   pages: write
@@ -24,6 +29,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: github-pages
     steps:
@@ -126,6 +132,7 @@ jobs:
       name: github-pages
       url: ${{ inputs.action == 'deploy' && 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/develop/' || steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: build
     steps:
       - name: Deploy to GitHub Pages

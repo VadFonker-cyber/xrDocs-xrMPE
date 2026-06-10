@@ -18,6 +18,11 @@ on:
       - 'vite.config.ts'
   workflow_dispatch:
 
+env:
+  NPM_CONFIG_AUDIT: false
+  NPM_CONFIG_FUND: false
+  NPM_CONFIG_PREFER_OFFLINE: true
+
 permissions:
   contents: read
   pages: write
@@ -30,6 +35,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: github-pages
     steps:
@@ -89,6 +95,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: build
     steps:
       - name: Deploy to GitHub Pages
