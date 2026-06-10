@@ -4,6 +4,7 @@ import { getLabel } from './locales';
 import { getAssetUrl, getDocUrl } from './routing';
 import { collectEvent } from './statistics';
 import { escapeHtml, escapeRegExp } from './utils/html';
+import { normalizeSearch } from './utils/search';
 
 type SearchResult = {
   doc: Doc;
@@ -96,10 +97,6 @@ export async function renderSearchResults(
         .join('')}
     </section>
   `;
-}
-
-export function normalizeSearch(value: string, lang: Lang): string {
-  return value.toLocaleLowerCase(lang).replace(/\s+/g, ' ').trim();
 }
 
 function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang): SearchResult[] {

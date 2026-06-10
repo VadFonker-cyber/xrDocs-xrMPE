@@ -1,11 +1,11 @@
 import type { AppContext } from './app-context';
 import { findNavNodePath, navTree, type NavNode } from './docs';
 import { getDocUrl } from './routing';
-import { renderSearchResults } from './search';
 import { getLabel } from './locales';
 import { escapeHtml } from './utils/html';
 
 let searchRenderRequest = 0;
+let searchModulePromise: Promise<typeof import('./search')> | undefined;
 
 export function renderNav(context: AppContext): void {
   const nav = document.querySelector<HTMLElement>('#docNav');
@@ -18,7 +18,10 @@ export function renderNav(context: AppContext): void {
 
   if (query) {
     const request = ++searchRenderRequest;
-    void renderSearchResults(context, nav, query, request, () => searchRenderRequest);
+    searchModulePromise ??= import('./search');
+    void searchModulePromise.then(({ renderSearchResults }) => {
+      void renderSearchResults(context, nav, query, request, () => searchRenderRequest);
+    });
     return;
   }
 

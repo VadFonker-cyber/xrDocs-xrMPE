@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import { generateContentData } from './scripts/generate-content-data.mjs';
 
@@ -79,6 +80,21 @@ function docsContentReloadPlugin(): Plugin {
   };
 }
 
+function omitPublicCachePlugin(): Plugin {
+  let outDir = '';
+
+  return {
+    name: 'xr-docs-omit-public-cache',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    async closeBundle() {
+      await fs.rm(path.join(outDir, '.asset-cache.json'), { force: true });
+    },
+  };
+}
+
 function invalidateGeneratedModules(server: ViteDevServer) {
   const generatedFiles = [
     path.resolve(server.config.root, 'src/generated/docs-manifest.json'),
@@ -124,20 +140,21 @@ function invalidateFileModules(server: ViteDevServer, file: string) {
 
 export default defineConfig(({ command }) => ({
   base: process.env.VITE_BASE_PATH || (command === 'build' ? '/xrDocs-xrMPE/' : './'),
-  plugins: [docsContentReloadPlugin()],
+  plugins: [docsContentReloadPlugin(), omitPublicCachePlugin()],
   build: {
     rolldownOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('/node_modules/markdown-it/')) {
-            return 'markdown';
-          }
-
-          if (id.includes('/node_modules/highlight.js/')) {
-            return 'highlight';
-          }
-
-          return undefined;
+        codeSplitting: {
+          groups: [
+            {
+              name: 'markdown',
+              test: '/node_modules/markdown-it/',
+            },
+            {
+              name: 'highlight',
+              test: '/node_modules/highlight.js/',
+            },
+          ],
         },
       },
     },
