@@ -7,17 +7,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -37,4 +36,6 @@ jobs:
             optimized-assets-${{ runner.os }}-
 
       - name: Build
+        env:
+          SKIP_GIT_UPDATED_AT: true
         run: npm run build

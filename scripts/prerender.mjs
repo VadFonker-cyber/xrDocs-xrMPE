@@ -14,6 +14,7 @@ const templatePath = path.join(distDir, 'index.html');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/');
 const noindex = isTruthyEnv(process.env.NOINDEX);
+const skipGitUpdatedAt = isTruthyEnv(process.env.SKIP_GIT_UPDATED_AT);
 const labelsCache = new Map();
 
 const template = fs.readFileSync(templatePath, 'utf8');
@@ -305,6 +306,10 @@ function getDocUpdatedAt(doc) {
 }
 
 function getGitUpdatedAtByPath(relativePaths) {
+  if (skipGitUpdatedAt) {
+    return new Map();
+  }
+
   const uniquePaths = [...new Set(relativePaths)].filter(Boolean);
 
   if (!uniquePaths.length) {
