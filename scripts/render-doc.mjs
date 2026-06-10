@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import {
   highlightCode,
@@ -12,6 +15,8 @@ import {
   buildTocTree,
 } from './markdown-shared.mjs';
 
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const assetMetadata = readAssetMetadata();
 const md = new MarkdownIt({
   html: false,
   linkify: true,
@@ -23,6 +28,7 @@ const defaultImageRule = md.renderer.rules.image;
 const defaultHeadingOpenRule = md.renderer.rules.heading_open;
 const alertTypes = new Set(['note', 'tip', 'important', 'warning', 'caution']);
 const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
+const preferredAvifAssets = new Map(Object.entries(assetMetadata.avif || {}));
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
@@ -431,5 +437,25 @@ function preferAvifAssetSrc(src) {
     return src;
   }
 
-  return `${path.replace(avifConvertibleAsset, '.avif')}${suffix}`;
+  const avifPath = preferredAvifAssets.get(normalizeAssetManifestPath(path));
+
+  return avifPath ? `${avifPath}${suffix}` : src;
+}
+
+function normalizeAssetManifestPath(src) {
+  return src.replace(/\\/g, '/').replace(/^\/+|^(?:\.\/)+/g, '');
+}
+
+function readAssetMetadata() {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(rootDir, 'src', 'generated', 'asset-metadata.json'), 'utf8'),
+    );
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+
+    return {};
+  }
 }

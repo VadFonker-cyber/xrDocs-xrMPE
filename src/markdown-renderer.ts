@@ -9,6 +9,7 @@ import type { TocItem, RenderedDoc } from './types';
 import { escapeHtml, splitAssetSrc } from './utils/html';
 import { generateHeadingId } from './utils/markdown';
 import { buildTocTree } from './utils/toc-builder';
+import assetMetadata from './generated/asset-metadata.json';
 
 type RenderOptions = {
   basePath: string;
@@ -20,8 +21,13 @@ type RenderEnv = {
   lang: Lang;
 };
 
+type AssetMetadata = {
+  avif?: Record<string, string>;
+};
+
 const themeAssetExtensions = 'avif|gif|jpe?g|png|svg|webp';
 const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
+const preferredAvifAssets = new Map(Object.entries((assetMetadata as AssetMetadata).avif ?? {}));
 const alertTypes = ['note', 'tip', 'important', 'warning', 'caution'] as const;
 
 type AlertType = (typeof alertTypes)[number];
@@ -460,5 +466,11 @@ function preferAvifAssetSrc(src: string): string {
     return src;
   }
 
-  return `${path.replace(avifConvertibleAsset, '.avif')}${suffix}`;
+  const avifPath = preferredAvifAssets.get(normalizeAssetManifestPath(path));
+
+  return avifPath ? `${avifPath}${suffix}` : src;
+}
+
+function normalizeAssetManifestPath(src: string): string {
+  return src.replace(/\\/g, '/').replace(/^\/+|^(?:\.\/)+/g, '');
 }
