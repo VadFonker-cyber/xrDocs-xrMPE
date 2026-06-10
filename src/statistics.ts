@@ -163,14 +163,7 @@ function readOrCreateVisitorId(): string | undefined {
 }
 
 function createVisitorId(): string {
-  if (crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-
-  const values = new Uint32Array(4);
-  crypto.getRandomValues(values);
-
-  return Array.from(values, (value) => value.toString(16).padStart(8, '0')).join('');
+  return crypto.randomUUID();
 }
 
 function failStatistics(): void {

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { slash } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicDir = path.join(rootDir, 'public');
@@ -10,7 +11,6 @@ const generatedDir = path.join(rootDir, 'src', 'generated');
 const sourceIcon = path.join(rootDir, 'scripts', 'assets', 'xrdocs-icon.png');
 const cacheFile = path.join(publicDir, '.asset-cache.json');
 const assetMetadataFile = path.join(generatedDir, 'asset-metadata.json');
-const legacyAssetDimensionsFile = path.join(generatedDir, 'asset-dimensions.json');
 const cacheSchemaVersion = 3;
 const avifOptions = { lossless: true, effort: 9 };
 const avifSourceExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
@@ -114,8 +114,6 @@ const removeFileIfExists = async (filePath) => {
     }
   }
 };
-
-const slash = (value) => value.replaceAll(path.sep, '/');
 
 const getPublicRelativePath = (filePath) => slash(path.relative(publicDir, filePath));
 
@@ -436,7 +434,6 @@ const writeAssetMetadata = async () => {
   );
 
   await fs.mkdir(generatedDir, { recursive: true });
-  await removeFileIfExists(legacyAssetDimensionsFile);
   await fs.writeFile(
     `${assetMetadataFile}.tmp`,
     `${JSON.stringify({ version: 2, assets }, null, 2)}\n`,

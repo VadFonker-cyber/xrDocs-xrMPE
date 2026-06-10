@@ -1,6 +1,5 @@
 /**
- * Configures highlight.js for Node.js build scripts.
- * The browser bundle equivalent is src/hljs-setup.ts — keep both in sync.
+ * Configures highlight.js for both Node.js build scripts and the browser bundle.
  */
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';

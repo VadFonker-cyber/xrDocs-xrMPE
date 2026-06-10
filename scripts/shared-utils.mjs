@@ -6,6 +6,23 @@ export function normalizeBasePath(value) {
   return `/${value.replace(/^\/+|\/+$/g, '')}/`;
 }
 
+export function slash(value) {
+  return value.replace(/\\/g, '/');
+}
+
+export function getDocKey(doc) {
+  return `${doc.lang}:${doc.id}`;
+}
+
+export function flattenToc(items, result = []) {
+  for (const item of items) {
+    result.push(item);
+    flattenToc(item.children || [], result);
+  }
+
+  return result;
+}
+
 // Keep in sync with src/docs.ts — same ordering logic used client-side.
 export function compareDocs(a, b) {
   if (a.lang !== b.lang) {
@@ -39,6 +56,18 @@ export function findNodePath(nodes, id) {
 
     if (childPath.length) {
       return [node, ...childPath];
+    }
+  }
+
+  return [];
+}
+
+export function findNavNodePath(nav, lang, id) {
+  for (const section of nav[lang] || []) {
+    const found = findNodePath(section.children, id);
+
+    if (found.length) {
+      return found;
     }
   }
 

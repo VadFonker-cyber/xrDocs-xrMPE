@@ -30,6 +30,8 @@ type SearchIndex = {
 
 let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
+let cachedHighlighterKey = '';
+let cachedHighlighter: ((value: string) => string) | undefined;
 const searchIndexPromises = new Map<Lang, Promise<SearchIndexEntry[]>>();
 const searchEntriesByLang = new Map<Lang, SearchIndexEntry[]>();
 
@@ -191,18 +193,28 @@ function getEntrySection(entry: SearchIndexEntry): string {
 }
 
 function buildHighlighter(query: string, lang: Lang): (value: string) => string {
+  const cacheKey = `${lang}:${query}`;
+
+  if (cacheKey === cachedHighlighterKey && cachedHighlighter) {
+    return cachedHighlighter;
+  }
+
   const terms = normalizeSearch(query, lang)
     .split(/\s+/)
     .filter(Boolean)
     .sort((a, b) => b.length - a.length)
     .map(escapeRegExp);
 
+  cachedHighlighterKey = cacheKey;
+
   if (!terms.length) {
-    return escapeHtml;
+    cachedHighlighter = escapeHtml;
+    return cachedHighlighter;
   }
 
   const pattern = new RegExp(`(${terms.join('|')})`, 'giu');
-  return (value: string) => escapeHtml(value).replace(pattern, '<mark>$1</mark>');
+  cachedHighlighter = (value: string) => escapeHtml(value).replace(pattern, '<mark>$1</mark>');
+  return cachedHighlighter;
 }
 
 function scheduleSearchStatistics(context: AppContext, query: string, resultCount: number): void {

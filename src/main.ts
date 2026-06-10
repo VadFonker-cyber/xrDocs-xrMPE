@@ -24,6 +24,13 @@ let currentTocDocKey = '';
 let lastNavKey = '';
 let lastPersistedLang: Lang | undefined;
 
+type SharedChromeOptions = {
+  activeDoc?: Doc;
+  navKey: string;
+  notFound: boolean;
+  tocDocKey: string;
+};
+
 const app = document.querySelector<HTMLDivElement>('#app');
 
 if (!app) {
@@ -91,40 +98,13 @@ function render(): void {
     history.replaceState(null, '', getDocUrl(activeDoc.id));
   }
 
-  if (state.lang !== lastPersistedLang) {
-    lastPersistedLang = state.lang;
-    localStorage.setItem('xrDocsLang', state.lang);
-  }
-  document.documentElement.lang = state.lang;
-  document.documentElement.dataset.theme = getResolvedTheme(context);
   document.title = `${activeDoc.title} | xrDocs`;
   updateDocumentMeta(activeDoc);
-  getShellRefs()?.layout?.removeAttribute('data-not-found');
-  setNotFoundChromeHidden(false);
-  setNavOpen(state.navOpen);
-  setTocOpen(state.tocOpen, false);
-
   const tocDocKey = getDocCacheKey(activeDoc);
-  if (tocDocKey !== currentTocDocKey) {
-    currentTocDocKey = tocDocKey;
-    resetTocState(context);
-  }
-
-  const searchInput = getShellRefs()?.searchInput;
-  if (searchInput) {
-    searchInput.placeholder = getLabel(state.lang, 'search.placeholder');
-    searchInput.value = state.search;
-  }
-
-  updateShellLabels(context);
-  renderTopbarControls(context, activeDoc);
-
   const navKey = `${state.lang}:${state.activeId}:${state.search}`;
-  if (navKey !== lastNavKey) {
-    lastNavKey = navKey;
-    renderNav();
-  }
 
+  renderSharedChrome({ activeDoc, navKey, notFound: false, tocDocKey });
+  setNotFoundChromeHidden(false);
   renderToc();
   clearNotFoundArticleBeforeLoad();
   collectCurrentPage(activeDoc);
@@ -139,40 +119,51 @@ function renderToc(): void {
   renderTocModule(context);
 }
 
-function renderNotFound(): void {
+function renderSharedChrome({ activeDoc, navKey, notFound, tocDocKey }: SharedChromeOptions): void {
   if (state.lang !== lastPersistedLang) {
     lastPersistedLang = state.lang;
     localStorage.setItem('xrDocsLang', state.lang);
   }
+
   document.documentElement.lang = state.lang;
   document.documentElement.dataset.theme = getResolvedTheme(context);
-  document.title = `${getLabel(state.lang, 'notFound.title')} | xrDocs`;
-  updateNotFoundMeta(state.lang);
-  getShellRefs()?.layout?.setAttribute('data-not-found', 'true');
+
+  const refs = getShellRefs();
+  if (notFound) {
+    refs?.layout?.setAttribute('data-not-found', 'true');
+  } else {
+    refs?.layout?.removeAttribute('data-not-found');
+  }
+
   setNavOpen(state.navOpen);
   setTocOpen(state.tocOpen, false);
 
-  const tocDocKey = `404:${state.lang}:${state.requestedPath || state.activeId}`;
   if (tocDocKey !== currentTocDocKey) {
     currentTocDocKey = tocDocKey;
     resetTocState(context);
   }
 
-  const searchInput = getShellRefs()?.searchInput;
-  if (searchInput) {
-    searchInput.placeholder = getLabel(state.lang, 'search.placeholder');
-    searchInput.value = state.search;
+  if (refs?.searchInput) {
+    refs.searchInput.placeholder = getLabel(state.lang, 'search.placeholder');
+    refs.searchInput.value = state.search;
   }
 
   updateShellLabels(context);
-  renderTopbarControls(context);
+  renderTopbarControls(context, activeDoc);
 
-  const navKey = `${state.lang}:404:${state.activeId}:${state.search}`;
   if (navKey !== lastNavKey) {
     lastNavKey = navKey;
     renderNav();
   }
+}
 
+function renderNotFound(): void {
+  document.title = `${getLabel(state.lang, 'notFound.title')} | xrDocs`;
+  updateNotFoundMeta(state.lang);
+  const tocDocKey = `404:${state.lang}:${state.requestedPath || state.activeId}`;
+  const navKey = `${state.lang}:404:${state.activeId}:${state.search}`;
+
+  renderSharedChrome({ navKey, notFound: true, tocDocKey });
   setCurrentTocItems([]);
   renderToc();
   setNotFoundChromeHidden(true);
@@ -324,11 +315,12 @@ function clearNotFoundArticleBeforeLoad(): void {
 }
 
 function setNotFoundChromeHidden(hidden: boolean): void {
-  document.querySelector<HTMLElement>('.sidebar')?.toggleAttribute('hidden', hidden);
-  document.querySelector<HTMLElement>('.topbar')?.toggleAttribute('hidden', hidden);
-  document.querySelector<HTMLElement>('#tocPanel')?.toggleAttribute('hidden', hidden);
-  document.querySelector<HTMLElement>('#navOverlay')?.toggleAttribute('hidden', hidden);
-  document.querySelector<HTMLElement>('#tocOverlay')?.toggleAttribute('hidden', hidden);
+  const refs = getShellRefs();
+  refs?.sidebar?.toggleAttribute('hidden', hidden);
+  refs?.topbar?.toggleAttribute('hidden', hidden);
+  refs?.tocPanel?.toggleAttribute('hidden', hidden);
+  refs?.navOverlay?.toggleAttribute('hidden', hidden);
+  refs?.tocOverlay?.toggleAttribute('hidden', hidden);
 }
 
 function renderNotFoundArticle(): string {

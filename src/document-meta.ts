@@ -1,14 +1,17 @@
 import type { Doc, Lang } from './docs';
 import { siteMeta, siteName } from './site-meta';
 import { getLabel } from './locales';
+import { getDocUrl } from './routing';
 
 export function updateDocumentMeta(doc: Doc): void {
   const title = `${doc.title} | ${siteName}`;
   const description = siteMeta[doc.lang].description;
+  const canonicalUrl = new URL(getDocUrl(doc.id), window.location.origin).toString();
 
   setMetaContent('name', 'description', description);
   setMetaContent('property', 'og:title', title);
   setMetaContent('property', 'og:description', description);
+  setMetaContent('property', 'og:url', canonicalUrl);
   setMetaContent('property', 'og:locale', siteMeta[doc.lang].locale);
   setMetaContent('name', 'twitter:title', title);
   setMetaContent('name', 'twitter:description', description);

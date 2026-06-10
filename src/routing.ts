@@ -1,5 +1,6 @@
 import { docs, getDocsByLang, hasDocId, type Lang } from './docs';
 import { detectBrowserLang, readSavedLang, type AppState } from './state';
+import { isLocalAssetSrc as isLocalAssetSrcShared } from '../scripts/markdown-common.mjs';
 
 export type Route = {
   lang: Lang;
@@ -75,7 +76,7 @@ export function getAssetUrl(src: string, basePathOverride = basePath): string {
 }
 
 export function isLocalAssetSrc(src: string): boolean {
-  return !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src);
+  return isLocalAssetSrcShared(src);
 }
 
 export function navigateToLink(event: MouseEvent, link: HTMLAnchorElement, state: AppState, render: () => void): void {

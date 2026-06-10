@@ -7,8 +7,9 @@ import { getNextThemePreference, getResolvedTheme } from './theme';
 import { getTocTitle, highlightHashTarget, highlightHeading, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
 import { escapeHtml } from './utils/html';
 import type { ThemePreference } from './state';
+import { githubUrl } from './site-meta';
+import { renderShellHtml } from '../scripts/shell-template.mjs';
 
-const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 const codeCopyFeedbackMs = 2200;
 const codeCopyErrorFeedbackMs = 3000;
 const copyToastVisibleMs = 2400;
@@ -25,6 +26,8 @@ type ShellRefs = {
   navOverlay: HTMLButtonElement | null;
   tocOverlay: HTMLButtonElement | null;
   sidebar: HTMLElement | null;
+  topbar: HTMLElement | null;
+  tocPanel: HTMLElement | null;
   tocResizeHandle: HTMLElement | null;
 };
 
@@ -50,78 +53,17 @@ export function renderShell(context: AppContext): void {
     ? ` data-doc-key="${escapeHtml(prerenderedDocKey || '')}" data-prerendered="true"`
     : '';
 
-  context.appRoot.innerHTML = `
-    <div class="layout" data-nav-open="false" data-toc-open="${context.state.tocOpen}" style="--toc-width: ${context.state.tocWidth}px">
-      <button id="navOverlay" class="nav-overlay" type="button" aria-label="${copy['aria.closeNavigation']}"></button>
-      <button id="tocOverlay" class="toc-overlay" type="button" aria-label="${copy['aria.closeContents']}"></button>
-      <aside class="sidebar" aria-label="${copy['aria.nav']}">
-        <div class="brand">
-          <picture>
-            <source srcset="${getAssetUrl('./xrdocs-brand.webp')}" type="image/webp" />
-            <img class="brand-mark" src="${getAssetUrl('./xrdocs-brand.png')}" width="42" height="42" alt="" aria-hidden="true" />
-          </picture>
-          <div>
-            <div class="brand-title">xrDocs</div>
-            <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>
-          </div>
-        </div>
-
-        <div class="search-panel">
-          <label class="search">
-            <span class="search-icon" aria-hidden="true"></span>
-            <input id="searchInput" type="search" placeholder="${copy['search.placeholder']}" autocomplete="off" />
-          </label>
-        </div>
-
-        <nav id="docNav" class="doc-nav"></nav>
-      </aside>
-
-      <main class="workspace">
-        <section class="topbar">
-          <div class="topbar-controls">
-            <button id="navToggle" class="control-button nav-toggle" type="button" aria-label="${copy['menu.label']}" aria-expanded="false">
-              <span class="menu-icon" aria-hidden="true"></span>
-              <span>${copy['menu.label']}</span>
-            </button>
-            <button id="languageToggle" class="control-button" type="button" aria-label="${copy['aria.switchLanguage']}"></button>
-            <button id="themeToggle" class="icon-button" type="button" aria-label="${copy['aria.switchTheme']}" title="${copy['aria.switchTheme']}"></button>
-            <button id="tocToggle" class="icon-button toc-toggle" type="button" aria-label="${getLabel(context.state.lang, 'toc.toggle')}" title="${getLabel(context.state.lang, 'toc.toggle')}" aria-expanded="${context.state.tocOpen}">
-              <span class="toc-icon" aria-hidden="true"></span>
-            </button>
-            <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M12.026 2c-5.509 0-9.974 4.465-9.974 9.974c0 4.406 2.857 8.145 6.821 9.465c.499.09.679-.217.679-.481c0-.237-.008-.865-.011-1.696c-2.775.602-3.361-1.338-3.361-1.338c-.452-1.152-1.107-1.459-1.107-1.459c-.905-.619.069-.605.069-.605c1.002.07 1.527 1.028 1.527 1.028c.89 1.524 2.336 1.084 2.902.829c.091-.645.351-1.085.635-1.334c-2.214-.251-4.542-1.107-4.542-4.93c0-1.087.389-1.979 1.024-2.675c-.101-.253-.446-1.268.099-2.64c0 0 .837-.269 2.742 1.021a9.582 9.582 0 0 1 2.496-.336a9.554 9.554 0 0 1 2.496.336c1.906-1.291 2.742-1.021 2.742-1.021c.545 1.372.203 2.387.099 2.64c.64.696 1.024 1.587 1.024 2.675c0 3.833-2.33 4.675-4.552 4.922c.355.308.675.916.675 1.846c0 1.334-.012 2.41-.012 2.737c0 .267.178.577.687.479C19.146 20.115 22 16.379 22 11.974C22 6.465 17.535 2 12.026 2z" />
-              </svg>
-            </a>
-          </div>
-        </section>
-
-        <section class="content-grid">
-          <article id="docArticle" class="doc-article"${prerenderedArticleAttributes}>${prerenderedArticleHtml}</article>
-        </section>
-      </main>
-
-      <aside id="tocPanel" class="toc-panel" aria-label="${getLabel(context.state.lang, 'toc.title')}">
-        <div id="tocResizeHandle" class="toc-resize-handle" role="separator" aria-orientation="vertical" aria-label="${getLabel(context.state.lang, 'aria.resizeContents')}"></div>
-        <div class="toc-header">
-          <h2>${getLabel(context.state.lang, 'toc.title')}</h2>
-          <div class="toc-actions">
-            <button id="tocSearchToggle" class="icon-button" type="button" aria-label="${getLabel(context.state.lang, 'toc.search')}" title="${getLabel(context.state.lang, 'toc.search')}" aria-pressed="false">
-              <span class="search-icon" aria-hidden="true"></span>
-            </button>
-            <button id="tocCollapseToggle" class="icon-button toc-collapse-toggle" type="button"></button>
-          </div>
-        </div>
-        <label class="search toc-search">
-          <span class="search-icon" aria-hidden="true"></span>
-          <input id="tocSearchInput" type="search" placeholder="${getLabel(context.state.lang, 'toc.search')}" autocomplete="off" />
-        </label>
-        <nav id="tocNav" class="toc-nav"></nav>
-      </aside>
-
-      <div id="copyToast" class="copy-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
-    </div>
-  `;
+  context.appRoot.innerHTML = renderShellHtml({
+    articleAttributes: prerenderedArticleAttributes,
+    articleHtml: prerenderedArticleHtml,
+    copy,
+    getAssetUrl,
+    githubUrl,
+    lang: context.state.lang,
+    notFound: context.state.notFound,
+    tocOpen: context.state.tocOpen,
+    tocWidth: context.state.tocWidth,
+  });
 
   bindShellEvents(context);
 
@@ -135,6 +77,8 @@ export function renderShell(context: AppContext): void {
     navOverlay: document.querySelector('#navOverlay'),
     tocOverlay: document.querySelector('#tocOverlay'),
     sidebar: document.querySelector('.sidebar'),
+    topbar: document.querySelector('.topbar'),
+    tocPanel: document.querySelector('#tocPanel'),
     tocResizeHandle: document.querySelector('#tocResizeHandle'),
   };
 }
@@ -514,34 +458,11 @@ function showCopyToast(message: string, variant: 'success' | 'error'): void {
 }
 
 async function copyTextToClipboard(value: string): Promise<boolean> {
-  if (!navigator.clipboard?.writeText) {
-    return fallbackCopyText(value);
-  }
-
   try {
     await navigator.clipboard.writeText(value);
     return true;
   } catch {
-    return fallbackCopyText(value);
-  }
-}
-
-function fallbackCopyText(value: string): boolean {
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  textarea.style.top = '0';
-  document.body.append(textarea);
-  textarea.select();
-
-  try {
-    return document.execCommand('copy');
-  } catch {
     return false;
-  } finally {
-    textarea.remove();
   }
 }
 

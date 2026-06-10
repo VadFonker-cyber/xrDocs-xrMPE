@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
-import { normalizeBasePath } from './shared-utils.mjs';
+import { flattenToc, getDocKey, normalizeBasePath, slash } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
@@ -112,10 +112,6 @@ function stripMarkdown(value) {
     .trim();
 }
 
-function slash(value) {
-  return value.replace(/\\/g, '/');
-}
-
 function groupSearchEntriesByLang(entries) {
   const map = new Map();
 
@@ -188,19 +184,6 @@ function buildHeadingAliases(docs, renderedDocs) {
   }
 
   return aliases;
-}
-
-function flattenToc(items, result = []) {
-  for (const item of items) {
-    result.push(item);
-    flattenToc(item.children || [], result);
-  }
-
-  return result;
-}
-
-function getDocKey(doc) {
-  return `${doc.lang}:${doc.id}`;
 }
 
 function getRenderedDocOutputPath(docContentDir, doc) {

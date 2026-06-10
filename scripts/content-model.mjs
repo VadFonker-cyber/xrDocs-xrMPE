@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { compareDocs } from './shared-utils.mjs';
+import { compareDocs, slash } from './shared-utils.mjs';
 
 export function readContentModel(docsDir) {
   const nav = {
@@ -194,8 +194,4 @@ function normalizeDocId(filePath, lang) {
 function extractTitle(content) {
   const heading = content.match(/^#\s+(.+)$/m);
   return heading ? heading[1].trim() : '';
-}
-
-function slash(value) {
-  return value.replace(/\\/g, '/');
 }

@@ -2,7 +2,7 @@ import type { AppContext } from './app-context';
 import { findNavNodePath, navTree, type NavNode } from './docs';
 import { getDocUrl } from './routing';
 import { getLabel } from './locales';
-import { escapeHtml } from './utils/html';
+import { renderNavSections } from '../scripts/nav-renderer.mjs';
 
 let searchRenderRequest = 0;
 let searchModulePromise: Promise<typeof import('./search')> | undefined;
@@ -35,71 +35,16 @@ export function renderNav(context: AppContext): void {
     return;
   }
 
-  nav.innerHTML = sections
-    .map(
-      (section) => `
-        <section class="nav-section">
-          <h2>${escapeHtml(section.title)}</h2>
-          ${renderNavNodes(context, section.children, activeAncestorKeys)}
-        </section>
-      `,
-    )
-    .join('');
+  nav.innerHTML = renderNavSections({
+    activeAncestorKeys,
+    activeId: context.state.activeId,
+    expandedIds: context.state.navExpandedIds,
+    getDocUrl,
+    getNavNodeKey,
+    sections,
+  });
 }
 
 export function getNavNodeKey(node: NavNode): string {
   return node.id || `${node.depth}:${node.order}:${node.title}`;
-}
-
-function renderNavNodes(context: AppContext, nodes: NavNode[], activeAncestorKeys: Set<string>): string {
-  if (!nodes.length) {
-    return '';
-  }
-
-  return `
-    <ul class="nav-list">
-      ${nodes.map((node) => renderNavNode(context, node, activeAncestorKeys)).join('')}
-    </ul>
-  `;
-}
-
-// SYNC CONTRACT: this function must produce the same HTML structure as
-// renderStaticNavNode() in scripts/prerender.mjs. Differences allowed:
-//   - data-nav-id button for client-side expand/collapse
-//   - expanded also considers context.state.navExpandedIds
-// If you change the HTML here, update scripts/prerender.mjs accordingly, and vice versa.
-function renderNavNode(context: AppContext, node: NavNode, activeAncestorKeys: Set<string>): string {
-  const key = getNavNodeKey(node);
-  const hasChildren = node.children.length > 0;
-  const expanded = hasChildren && (activeAncestorKeys.has(key) || context.state.navExpandedIds.has(key));
-  const active = node.id === context.state.activeId ? ' aria-current="page"' : '';
-  const toggle = hasChildren
-    ? `
-      <button
-        class="nav-item-toggle"
-        type="button"
-        data-nav-id="${escapeHtml(key)}"
-        aria-label="${escapeHtml(node.title)}"
-        aria-expanded="${expanded}"
-      ></button>
-    `
-    : '<span class="nav-item-spacer" aria-hidden="true"></span>';
-  const label = node.id
-    ? `
-      <a class="doc-link" href="${getDocUrl(node.id)}"${active}>
-        <span>${escapeHtml(node.title)}</span>
-      </a>
-    `
-    : `<span class="nav-folder-label">${escapeHtml(node.title)}</span>`;
-  const children = hasChildren ? renderNavNodes(context, node.children, activeAncestorKeys) : '';
-
-  return `
-    <li class="nav-item" data-depth="${node.depth}" data-expanded="${expanded}">
-      <div class="nav-item-row">
-        ${toggle}
-        ${label}
-      </div>
-      ${children}
-    </li>
-  `;
 }

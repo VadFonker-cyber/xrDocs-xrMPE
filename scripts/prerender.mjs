@@ -5,7 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { readContentModel } from './content-model.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
-import { findNodePath, getNavNodeKey, normalizeBasePath } from './shared-utils.mjs';
+import { findNavNodePath, getDocKey, getNavNodeKey, normalizeBasePath, slash } from './shared-utils.mjs';
+import { renderShellHtml } from './shell-template.mjs';
+import { renderNavSections } from './nav-renderer.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(rootDir, 'docs');
@@ -126,59 +128,20 @@ function renderStaticBody(activeDoc, options = {}) {
   const nav = renderStaticNav(activeDoc);
   const article = options.notFound ? renderStaticNotFoundArticle(activeDoc.lang) : renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
   const docKey = options.notFound ? `404:${activeDoc.lang}` : getDocKey(activeDoc);
-  const layoutAttributes = options.notFound ? ' data-not-found="true"' : '';
-  const hiddenAttribute = options.notFound ? ' hidden' : '';
   const articleAttributes = options.notFound
     ? ` data-doc-key="${escapeHtml(docKey)}"`
     : ` data-doc-key="${escapeHtml(docKey)}" data-prerendered="true"`;
 
-  return `
-    <div class="layout"${layoutAttributes} data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
-      <button class="nav-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeNavigation'] || '')}"${hiddenAttribute}></button>
-      <button class="toc-overlay" type="button" aria-label="${escapeHtml(copy['aria.closeContents'] || '')}"${hiddenAttribute}></button>
-      <aside class="sidebar" aria-label="${escapeHtml(copy['aria.nav'] || 'Documentation navigation')}"${hiddenAttribute}>
-        <div class="brand">
-          <picture>
-            <source srcset="${getAssetPath('./xrdocs-brand.webp')}" type="image/webp" />
-            <img class="brand-mark" src="${getAssetPath('./xrdocs-brand.png')}" width="42" height="42" alt="" aria-hidden="true" />
-          </picture>
-          <div>
-            <div class="brand-title">xrDocs</div>
-            <div class="brand-subtitle">S.T.A.L.K.E.R. modding</div>
-          </div>
-        </div>
-        <div class="search-panel">
-          <label class="search">
-            <span class="search-icon" aria-hidden="true"></span>
-            <input type="search" placeholder="${escapeHtml(copy['search.placeholder'] || '')}" autocomplete="off" />
-          </label>
-        </div>
-        <nav class="doc-nav">${nav}</nav>
-      </aside>
-      <main class="workspace">
-        <section class="topbar"${hiddenAttribute}>
-          <div class="topbar-controls">
-            <button class="control-button nav-toggle" type="button" aria-label="${escapeHtml(copy['menu.label'] || 'Menu')}" aria-expanded="false">
-              <span class="menu-icon" aria-hidden="true"></span>
-              <span>${escapeHtml(copy['menu.label'] || 'Menu')}</span>
-            </button>
-            <button class="control-button" type="button" aria-label="${escapeHtml(copy['aria.switchLanguage'] || '')}">${activeDoc.lang.toUpperCase()}</button>
-            <button class="icon-button" type="button" aria-label="${escapeHtml(copy['aria.switchTheme'] || '')}"></button>
-            <button class="icon-button toc-toggle" type="button" aria-label="${escapeHtml(copy['toc.toggle'] || '')}" aria-expanded="false">
-              <span class="toc-icon" aria-hidden="true"></span>
-            </button>
-            <a class="icon-button" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub"></a>
-          </div>
-        </section>
-        <section class="content-grid">
-          <article id="docArticle" class="doc-article"${articleAttributes}>${article}</article>
-        </section>
-      </main>
-      <aside class="toc-panel" aria-label="${escapeHtml(copy['toc.title'] || 'Contents')}"${hiddenAttribute}>
-        <div class="toc-header"><h2>${escapeHtml(copy['toc.title'] || 'Contents')}</h2></div>
-      </aside>
-    </div>
-  `;
+  return renderShellHtml({
+    articleAttributes,
+    articleHtml: article,
+    copy,
+    getAssetUrl: getAssetPath,
+    githubUrl,
+    lang: activeDoc.lang,
+    navHtml: nav,
+    notFound: Boolean(options.notFound),
+  });
 }
 
 function renderStaticNotFoundArticle(lang) {
@@ -195,68 +158,16 @@ function renderStaticNotFoundArticle(lang) {
 }
 
 function renderStaticNav(activeDoc) {
-  const activePath = findNavNodePath(activeDoc.lang, activeDoc.id);
+  const activePath = findNavNodePath(nav, activeDoc.lang, activeDoc.id);
   const activeAncestorKeys = new Set(activePath.slice(0, -1).map(getNavNodeKey));
 
-  return (nav[activeDoc.lang] || [])
-    .map(
-      (section) =>
-        `<section class="nav-section"><h2>${escapeHtml(section.title)}</h2>${renderStaticNavNodes(section.children, activeDoc, activeAncestorKeys)}</section>`,
-    )
-    .join('');
-}
-
-function renderStaticNavNodes(nodes, activeDoc, activeAncestorKeys) {
-  if (!nodes.length) {
-    return '';
-  }
-
-  return `<ul class="nav-list">${nodes.map((node) => renderStaticNavNode(node, activeDoc, activeAncestorKeys)).join('')}</ul>`;
-}
-
-// SYNC CONTRACT: this function must produce the same HTML structure as
-// renderNavNode() in src/nav.ts. Differences allowed:
-//   - no data-nav-id click handling (static HTML has no JS at render time)
-//   - expanded is derived only from ancestor path, not navExpandedIds
-// If you change the HTML here, update src/nav.ts accordingly, and vice versa.
-function renderStaticNavNode(node, activeDoc, activeAncestorKeys) {
-  const key = getNavNodeKey(node);
-  const hasChildren = node.children.length > 0;
-  const expanded = hasChildren && activeAncestorKeys.has(key);
-  const active = node.id === activeDoc.id ? ' aria-current="page"' : '';
-  const toggle = hasChildren
-    ? `<button class="nav-item-toggle" type="button" data-nav-id="${escapeHtml(key)}" aria-label="${escapeHtml(node.title)}" aria-expanded="${expanded}"></button>`
-    : '<span class="nav-item-spacer" aria-hidden="true"></span>';
-  const label = node.id
-    ? `
-      <a class="doc-link" href="${getDocPath(node.id)}"${active}>
-        <span>${escapeHtml(node.title)}</span>
-      </a>
-    `
-    : `<span class="nav-folder-label">${escapeHtml(node.title)}</span>`;
-  const children = hasChildren ? renderStaticNavNodes(node.children, activeDoc, activeAncestorKeys) : '';
-
-  return `
-    <li class="nav-item" data-depth="${node.depth}" data-expanded="${expanded}">
-      <div class="nav-item-row">
-        ${toggle}
-        ${label}
-      </div>
-      ${children}
-    </li>
-  `;
-}
-
-function findNavNodePath(lang, id) {
-  for (const section of nav[lang] || []) {
-    const found = findNodePath(section.children, id);
-
-    if (found.length) {
-      return found;
-    }
-  }
-
-  return [];
+  return renderNavSections({
+    activeAncestorKeys,
+    activeId: activeDoc.id,
+    getDocUrl: getDocPath,
+    getNavNodeKey,
+    sections: nav[activeDoc.lang] || [],
+  });
 }
 
 function writeSitemap(pages) {
@@ -357,10 +268,6 @@ function readLabels(lang) {
 
   labelsCache.set(lang, result);
   return result;
-}
-
-function getDocKey(doc) {
-  return `${doc.lang}:${doc.id}`;
 }
 
 /**
@@ -464,8 +371,4 @@ function isTruthyEnv(value) {
 
 function escapeXml(value) {
   return escapeHtml(value).replace(/&#039;/g, '&apos;');
-}
-
-function slash(value) {
-  return value.replace(/\\/g, '/');
 }
