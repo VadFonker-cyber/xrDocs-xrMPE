@@ -30,16 +30,20 @@ type SearchIndex = {
 
 let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
-let searchIndexPromise: Promise<Map<Lang, SearchIndexEntry[]>> | undefined;
-let searchEntriesByLang: Map<Lang, SearchIndexEntry[]> | undefined;
+const searchIndexPromises = new Map<Lang, Promise<SearchIndexEntry[]>>();
+const searchEntriesByLang = new Map<Lang, SearchIndexEntry[]>();
 
-export async function loadSearchIndex(): Promise<Map<Lang, SearchIndexEntry[]>> {
-  if (searchEntriesByLang) {
-    return searchEntriesByLang;
+export async function loadSearchIndex(lang: Lang): Promise<SearchIndexEntry[]> {
+  const cachedEntries = searchEntriesByLang.get(lang);
+
+  if (cachedEntries) {
+    return cachedEntries;
   }
 
-  if (!searchIndexPromise) {
-    searchIndexPromise = fetch(getAssetUrl('search-index.json'), { cache: 'force-cache' })
+  let promise = searchIndexPromises.get(lang);
+
+  if (!promise) {
+    promise = fetch(getAssetUrl(`search-index.${lang}.json`), { cache: 'force-cache' })
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Search index request failed with ${response.status}.`);
@@ -48,12 +52,14 @@ export async function loadSearchIndex(): Promise<Map<Lang, SearchIndexEntry[]>> 
         return response.json() as Promise<SearchIndex>;
       })
       .then((index) => {
-        searchEntriesByLang = partitionSearchEntriesByLang(index.docs);
-        return searchEntriesByLang;
+        const entries = index.docs.filter((entry) => entry.lang === lang);
+        searchEntriesByLang.set(lang, entries);
+        return entries;
       });
+    searchIndexPromises.set(lang, promise);
   }
 
-  return searchIndexPromise;
+  return promise;
 }
 
 export async function renderSearchResults(
@@ -63,13 +69,13 @@ export async function renderSearchResults(
   request: number,
   getCurrentRequest: () => number,
 ): Promise<void> {
-  const entriesByLang = searchEntriesByLang || await loadSearchIndex();
+  const entries = searchEntriesByLang.get(context.state.lang) ?? await loadSearchIndex(context.state.lang);
 
   if (request !== getCurrentRequest() || query !== context.state.search.trim()) {
     return;
   }
 
-  const results = getSearchResults(query, entriesByLang.get(context.state.lang) ?? [], context.state.lang);
+  const results = getSearchResults(query, entries, context.state.lang);
   scheduleSearchStatistics(context, query, results.length);
 
   if (!results.length) {
@@ -143,22 +149,6 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
     .filter((result): result is SearchResult => Boolean(result))
     .filter((result) => result.score > 0)
     .sort((a, b) => b.score - a.score || compareDocs(a.doc, b.doc));
-}
-
-function partitionSearchEntriesByLang(entries: SearchIndexEntry[]): Map<Lang, SearchIndexEntry[]> {
-  const map = new Map<Lang, SearchIndexEntry[]>();
-
-  for (const entry of entries) {
-    const langEntries = map.get(entry.lang);
-
-    if (langEntries) {
-      langEntries.push(entry);
-    } else {
-      map.set(entry.lang, [entry]);
-    }
-  }
-
-  return map;
 }
 
 function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {

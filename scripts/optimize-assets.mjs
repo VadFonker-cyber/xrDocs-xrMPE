@@ -10,9 +10,11 @@ const generatedDir = path.join(rootDir, 'src', 'generated');
 const sourceIcon = path.join(rootDir, 'scripts', 'assets', 'xrdocs-icon.png');
 const cacheFile = path.join(publicDir, '.asset-cache.json');
 const assetMetadataFile = path.join(generatedDir, 'asset-metadata.json');
+const legacyAssetDimensionsFile = path.join(generatedDir, 'asset-dimensions.json');
 const cacheSchemaVersion = 3;
 const avifOptions = { lossless: true, effort: 9 };
 const avifSourceExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const rasterAssetExtensions = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp']);
 const avifSourcePriority = new Map([
   ['.png', 0],
   ['.jpg', 1],
@@ -150,6 +152,9 @@ const listPublicFiles = async (dirPath) => {
 const isConvertibleRasterSource = (filePath) =>
   avifSourceExtensions.has(path.extname(filePath).toLowerCase());
 
+const isRasterAsset = (filePath) =>
+  rasterAssetExtensions.has(path.extname(filePath).toLowerCase());
+
 const getAvifOutputPath = (sourcePath) =>
   path.join(path.dirname(sourcePath), `${path.basename(sourcePath, path.extname(sourcePath))}.avif`);
 
@@ -179,6 +184,22 @@ const collectAvifOutputs = async () => {
   return Array.from(outputMap.values()).sort((a, b) =>
     a.relativeOutputPath.localeCompare(b.relativeOutputPath),
   );
+};
+
+const removeStaleAvifOutputs = async (cache, avifOutputs) => {
+  const expectedOutputs = new Set(avifOutputs.map((output) => output.relativeOutputPath));
+  const removals = [];
+
+  for (const [relativeOutputPath, cachedAsset] of Object.entries(cache.assets)) {
+    if (cachedAsset?.type !== 'avif' || expectedOutputs.has(relativeOutputPath)) {
+      continue;
+    }
+
+    removals.push(removeFileIfExists(path.join(publicDir, relativeOutputPath)));
+    delete cache.assets[relativeOutputPath];
+  }
+
+  await Promise.all(removals);
 };
 
 const optimizeIconOutput = async (output, sourceHash, cache) => {
@@ -342,23 +363,83 @@ const optimizeAvifOutput = async (output, cache) => {
   };
 };
 
-const writeAssetMetadata = async (results) => {
-  const avif = Object.fromEntries(
-    results
-      .filter((result) =>
-        result.type === 'avif' &&
-        (result.status === 'generated' || result.status === 'cached') &&
-        result.source &&
-        cache.assets[result.relativeOutputPath]?.status === 'generated'
+const readRasterAssetInfo = async (filePath) => {
+  const [stats, metadata] = await Promise.all([
+    fs.stat(filePath),
+    sharp(filePath).metadata(),
+  ]);
+
+  if (!metadata.width || !metadata.height) {
+    return undefined;
+  }
+
+  return {
+    path: getPublicRelativePath(filePath),
+    byteSize: stats.size,
+    width: metadata.width,
+    height: metadata.height,
+  };
+};
+
+const readRasterAssetInfos = async () => {
+  const files = (await listPublicFiles(publicDir)).filter(isRasterAsset);
+  const infos = await Promise.all(files.map(readRasterAssetInfo));
+  return infos
+    .filter(Boolean)
+    .sort((a, b) => a.path.localeCompare(b.path));
+};
+
+const buildPreferredPathMap = (infosByPath, cache) => {
+  const preferredPathBySource = new Map();
+
+  for (const [relativeOutputPath, cachedAsset] of Object.entries(cache.assets)) {
+    if (cachedAsset?.type !== 'avif' || cachedAsset.status !== 'generated' || !cachedAsset.source) {
+      continue;
+    }
+
+    const sourceInfo = infosByPath.get(cachedAsset.source);
+    const avifInfo = infosByPath.get(relativeOutputPath);
+
+    if (sourceInfo && avifInfo && avifInfo.byteSize < sourceInfo.byteSize) {
+      preferredPathBySource.set(cachedAsset.source, relativeOutputPath);
+    }
+  }
+
+  return preferredPathBySource;
+};
+
+const writeAssetMetadata = async () => {
+  const infos = await readRasterAssetInfos();
+  const infosByPath = new Map(infos.map((info) => [info.path, info]));
+  const preferredPathBySource = buildPreferredPathMap(infosByPath, cache);
+  const avifOriginalPath = new Map(
+    Object.entries(cache.assets)
+      .filter(([, cachedAsset]) =>
+        cachedAsset?.type === 'avif' &&
+        cachedAsset.status === 'generated' &&
+        cachedAsset.source
       )
-      .map((result) => [result.source, result.relativeOutputPath])
-      .sort(([a], [b]) => a.localeCompare(b)),
+      .map(([relativeOutputPath, cachedAsset]) => [relativeOutputPath, cachedAsset.source]),
+  );
+  const assets = Object.fromEntries(
+    infos.map((info) => [
+      info.path,
+      {
+        path: info.path,
+        originalPath: avifOriginalPath.get(info.path) || info.path,
+        preferredPath: preferredPathBySource.get(info.path) || info.path,
+        byteSize: info.byteSize,
+        width: info.width,
+        height: info.height,
+      },
+    ]),
   );
 
   await fs.mkdir(generatedDir, { recursive: true });
+  await removeFileIfExists(legacyAssetDimensionsFile);
   await fs.writeFile(
     `${assetMetadataFile}.tmp`,
-    `${JSON.stringify({ version: 1, avif }, null, 2)}\n`,
+    `${JSON.stringify({ version: 2, assets }, null, 2)}\n`,
   );
   await fs.rename(`${assetMetadataFile}.tmp`, assetMetadataFile);
 };
@@ -371,6 +452,7 @@ const iconResults = await Promise.all(
   iconOutputs.map((output) => optimizeIconOutput(output, iconSourceHash, cache)),
 );
 const avifOutputs = await collectAvifOutputs();
+await removeStaleAvifOutputs(cache, avifOutputs);
 const avifResults = await Promise.all(
   avifOutputs.map((output) => optimizeAvifOutput(output, cache)),
 );
@@ -378,7 +460,7 @@ const results = [...iconResults, ...avifResults];
 
 await fs.writeFile(`${cacheFile}.tmp`, `${JSON.stringify(cache, null, 2)}\n`);
 await fs.rename(`${cacheFile}.tmp`, cacheFile);
-await writeAssetMetadata(results);
+await writeAssetMetadata();
 
 const generatedCount = results.filter((result) => result.status === 'generated').length;
 const cachedCount = results.filter((result) => result.status === 'cached').length;

@@ -24,6 +24,7 @@ export async function generateContentData(options = {}) {
     section: doc.section,
     text: stripMarkdown(doc.content),
   }));
+  const searchIndexByLang = groupSearchEntriesByLang(searchIndex);
   const themeAssets = listPublicFiles(publicDir)
     .map((file) => slash(path.relative(publicDir, file)))
     .filter((file) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file))
@@ -37,6 +38,7 @@ export async function generateContentData(options = {}) {
   const headingAliases = buildHeadingAliases(docs, renderedDocs);
 
   await fs.promises.mkdir(generatedDir, { recursive: true });
+  await cleanupGeneratedPublicOutputs(publicDir, docContentDir);
 
   await Promise.all([
     fs.promises.writeFile(
@@ -51,14 +53,13 @@ export async function generateContentData(options = {}) {
       path.join(generatedDir, 'heading-aliases.json'),
       `${JSON.stringify(headingAliases, null, 2)}\n`,
     ),
-    fs.promises.writeFile(
-      path.join(publicDir, 'search-index.json'),
-      `${JSON.stringify({ docs: searchIndex })}\n`,
+    ...Array.from(searchIndexByLang, ([lang, entries]) =>
+      fs.promises.writeFile(
+        path.join(publicDir, `search-index.${lang}.json`),
+        `${JSON.stringify({ docs: entries })}\n`,
+      ),
     ),
   ]);
-
-  fs.rmSync(path.join(publicDir, 'doc-content.json'), { force: true });
-  fs.rmSync(docContentDir, { recursive: true, force: true });
 
   await Promise.all(
     docs.map(async (doc) => {
@@ -113,6 +114,37 @@ function stripMarkdown(value) {
 
 function slash(value) {
   return value.replace(/\\/g, '/');
+}
+
+function groupSearchEntriesByLang(entries) {
+  const map = new Map();
+
+  for (const entry of entries) {
+    const langEntries = map.get(entry.lang);
+
+    if (langEntries) {
+      langEntries.push(entry);
+    } else {
+      map.set(entry.lang, [entry]);
+    }
+  }
+
+  return map;
+}
+
+async function cleanupGeneratedPublicOutputs(publicDir, docContentDir) {
+  const entries = fs.existsSync(publicDir)
+    ? await fs.promises.readdir(publicDir, { withFileTypes: true })
+    : [];
+  const staleSearchIndexFiles = entries
+    .filter((entry) => entry.isFile() && /^search-index(?:\.[^.]+)?\.json$/i.test(entry.name))
+    .map((entry) => fs.promises.rm(path.join(publicDir, entry.name), { force: true }));
+
+  await Promise.all([
+    fs.promises.rm(path.join(publicDir, 'doc-content.json'), { force: true }),
+    fs.promises.rm(docContentDir, { recursive: true, force: true }),
+    ...staleSearchIndexFiles,
+  ]);
 }
 
 function buildHeadingAliases(docs, renderedDocs) {

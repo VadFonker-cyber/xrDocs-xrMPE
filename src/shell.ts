@@ -189,7 +189,7 @@ function bindShellEvents(context: AppContext): void {
   searchInput?.addEventListener('focus', () => {
     searchModulePromise ??= import('./search');
     void searchModulePromise.then(({ loadSearchIndex }) => {
-      void loadSearchIndex();
+      void loadSearchIndex(context.state.lang);
     });
   });
 

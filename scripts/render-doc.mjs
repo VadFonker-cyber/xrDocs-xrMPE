@@ -27,8 +27,7 @@ const md = new MarkdownIt({
 const defaultImageRule = md.renderer.rules.image;
 const defaultHeadingOpenRule = md.renderer.rules.heading_open;
 const alertTypes = new Set(['note', 'tip', 'important', 'warning', 'caution']);
-const avifConvertibleAsset = /\.(?:jpe?g|png|webp)$/i;
-const preferredAvifAssets = new Map(Object.entries(assetMetadata.avif || {}));
+const assetMetadataByPath = new Map(Object.entries(assetMetadata.assets || {}));
 
 md.core.ruler.after('inline', 'table_column_options', applyTableColumnOptions);
 md.core.ruler.after('inline', 'github_alerts', applyGithubAlerts);
@@ -72,14 +71,19 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const src = token.attrs?.[srcIndex]?.[1] || '';
 
     if (isLocalAssetSrc(src)) {
-      const assetSrc = preferAvifAssetSrc(src);
+      const asset = getAssetMetadata(src);
+      const assetSrc = getPreferredAssetSrc(src);
       token.attrSet('src', getAssetPath(assetSrc, env.basePath));
+      setImagePerformanceAttributes(token, asset);
 
-      if (isThemeAssetSrc(assetSrc)) {
-        token.attrSet('data-theme-asset-base', getAssetPath(normalizeThemeAssetSrc(assetSrc), env.basePath));
+      if (isThemeAssetSrc(src)) {
+        token.attrSet('data-theme-asset-base', getAssetPath(getPreferredAssetSrc(normalizeThemeAssetSrc(src)), env.basePath));
       }
     }
   }
+
+  token.attrSet('loading', 'lazy');
+  token.attrSet('decoding', 'async');
 
   return defaultImageRule
     ? defaultImageRule(tokens, index, options, env, self)
@@ -430,16 +434,31 @@ function getAssetPath(src, basePath) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
 }
 
-function preferAvifAssetSrc(src) {
-  const { path, suffix } = splitAssetSrc(src);
+function getAssetMetadata(src) {
+  const { path } = splitAssetSrc(src);
 
-  if (!avifConvertibleAsset.test(path)) {
-    return src;
+  return assetMetadataByPath.get(normalizeAssetManifestPath(path));
+}
+
+function getPreferredAssetSrc(src) {
+  const { path, suffix } = splitAssetSrc(src);
+  const asset = assetMetadataByPath.get(normalizeAssetManifestPath(path));
+
+  return asset?.preferredPath ? `${asset.preferredPath}${suffix}` : src;
+}
+
+function setImagePerformanceAttributes(token, asset) {
+  if (!asset) {
+    return;
   }
 
-  const avifPath = preferredAvifAssets.get(normalizeAssetManifestPath(path));
+  if (Number.isInteger(asset.width) && !token.attrGet('width')) {
+    token.attrSet('width', String(asset.width));
+  }
 
-  return avifPath ? `${avifPath}${suffix}` : src;
+  if (Number.isInteger(asset.height) && !token.attrGet('height')) {
+    token.attrSet('height', String(asset.height));
+  }
 }
 
 function normalizeAssetManifestPath(src) {
