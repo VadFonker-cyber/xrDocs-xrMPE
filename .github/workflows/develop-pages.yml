@@ -46,7 +46,6 @@ jobs:
         with:
           ref: develop
           path: develop
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -107,6 +106,7 @@ jobs:
         working-directory: develop
         env:
           NOINDEX: true
+          SKIP_GIT_UPDATED_AT: true
           SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/develop/
           VITE_BASE_PATH: /xrDocs-xrMPE/develop/
           VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}

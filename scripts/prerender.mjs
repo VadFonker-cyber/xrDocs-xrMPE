@@ -21,7 +21,10 @@ const labelsCache = new Map();
 
 const template = fs.readFileSync(templatePath, 'utf8');
 const { docs, nav } = readContentModel(docsDir);
-const gitUpdatedAtByPath = getGitUpdatedAtByPath(docs.map((doc) => doc.path));
+const shouldReadGitUpdatedAt = !noindex && !skipGitUpdatedAt;
+const gitUpdatedAtByPath = shouldReadGitUpdatedAt
+  ? getGitUpdatedAtByPath(docs.map((doc) => doc.path))
+  : new Map();
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
 
 /**
@@ -217,10 +220,6 @@ function getDocUpdatedAt(doc) {
 }
 
 function getGitUpdatedAtByPath(relativePaths) {
-  if (skipGitUpdatedAt) {
-    return new Map();
-  }
-
   const uniquePaths = [...new Set(relativePaths)].filter(Boolean);
 
   if (!uniquePaths.length) {
