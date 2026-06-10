@@ -4,7 +4,7 @@ import { docs, getDocsByLang, type Doc, type Lang } from './docs';
 import { updateDocumentMeta } from './document-meta';
 import { renderNav as renderNavModule } from './nav';
 import { getDocUrl, readRoute } from './routing';
-import { renderShell, renderTopbarControls, updateShellLabels } from './shell';
+import { renderShell, renderTopbarControls, updateShellLabels, getShellRefs } from './shell';
 import { createAppState, type ThemePreference } from './state';
 import { collectEvent, collectPageView, initStatistics } from './statistics';
 import { getResolvedTheme, updateThemeAssets } from './theme';
@@ -104,7 +104,7 @@ function render(): void {
     resetTocState(context);
   }
 
-  const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
+  const searchInput = getShellRefs()?.searchInput;
   if (searchInput) {
     searchInput.placeholder = getLabel(state.lang, 'search.placeholder');
     searchInput.value = state.search;
@@ -195,14 +195,16 @@ function switchTheme(nextTheme: ThemePreference): void {
 
 function setNavOpen(open: boolean): void {
   state.navOpen = open;
-  document.querySelector<HTMLElement>('.layout')?.setAttribute('data-nav-open', String(open));
-  document.querySelector<HTMLButtonElement>('#navToggle')?.setAttribute('aria-expanded', String(open));
+  const refs = getShellRefs();
+  refs?.layout?.setAttribute('data-nav-open', String(open));
+  refs?.navToggle?.setAttribute('aria-expanded', String(open));
 }
 
 function setTocOpen(open: boolean, persist = true): void {
   state.tocOpen = open;
-  document.querySelector<HTMLElement>('.layout')?.setAttribute('data-toc-open', String(open));
-  document.querySelector<HTMLButtonElement>('#tocToggle')?.setAttribute('aria-expanded', String(open));
+  const refs = getShellRefs();
+  refs?.layout?.setAttribute('data-toc-open', String(open));
+  refs?.tocToggle?.setAttribute('aria-expanded', String(open));
 
   if (persist) {
     localStorage.setItem('xrDocsTocOpen', String(open));

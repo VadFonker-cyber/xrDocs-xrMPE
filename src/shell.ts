@@ -12,6 +12,8 @@ import type { ThemePreference } from './state';
 const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
 
 type ShellRefs = {
+  layout: HTMLElement | null;
+  searchInput: HTMLInputElement | null;
   languageToggle: HTMLButtonElement | null;
   navToggle: HTMLButtonElement | null;
   themeToggle: HTMLButtonElement | null;
@@ -23,6 +25,10 @@ type ShellRefs = {
 };
 
 let shellRefs: ShellRefs | null = null;
+
+export function getShellRefs(): ShellRefs | null {
+  return shellRefs;
+}
 
 export function renderShell(context: AppContext): void {
   const copy = labels[context.state.lang];
@@ -109,6 +115,8 @@ export function renderShell(context: AppContext): void {
   bindShellEvents(context);
 
   shellRefs = {
+    layout: document.querySelector('.layout'),
+    searchInput: document.querySelector('#searchInput'),
     languageToggle: document.querySelector('#languageToggle'),
     navToggle: document.querySelector('#navToggle'),
     themeToggle: document.querySelector('#themeToggle'),

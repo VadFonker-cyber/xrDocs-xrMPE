@@ -116,32 +116,42 @@ function slash(value) {
 }
 
 function buildHeadingAliases(docs, renderedDocs) {
+  // Group docs by id — only pairs with the same id but different lang matter.
+  // This replaces the previous O(n²) nested loop with a single O(n) pass.
+  const byId = new Map();
+  for (const doc of docs) {
+    if (!byId.has(doc.id)) byId.set(doc.id, []);
+    byId.get(doc.id).push(doc);
+  }
+
   const aliases = {};
 
-  for (const targetDoc of docs) {
-    const targetHeadings = flattenToc(renderedDocs.get(getDocKey(targetDoc))?.toc || []);
-    const targetAliases = {};
+  for (const group of byId.values()) {
+    if (group.length < 2) continue;
 
-    for (const sourceDoc of docs) {
-      if (sourceDoc.id !== targetDoc.id || sourceDoc.lang === targetDoc.lang) {
-        continue;
-      }
+    for (const targetDoc of group) {
+      const targetHeadings = flattenToc(renderedDocs.get(getDocKey(targetDoc))?.toc || []);
+      const targetAliases = {};
 
-      const sourceHeadings = flattenToc(renderedDocs.get(getDocKey(sourceDoc))?.toc || []);
-      const max = Math.min(sourceHeadings.length, targetHeadings.length);
+      for (const sourceDoc of group) {
+        if (sourceDoc.lang === targetDoc.lang) continue;
 
-      for (let index = 0; index < max; index += 1) {
-        const source = sourceHeadings[index];
-        const target = targetHeadings[index];
+        const sourceHeadings = flattenToc(renderedDocs.get(getDocKey(sourceDoc))?.toc || []);
+        const max = Math.min(sourceHeadings.length, targetHeadings.length);
 
-        if (source.level === target.level && source.id !== target.id) {
-          targetAliases[source.id] = target.id;
+        for (let index = 0; index < max; index += 1) {
+          const source = sourceHeadings[index];
+          const target = targetHeadings[index];
+
+          if (source.level === target.level && source.id !== target.id) {
+            targetAliases[source.id] = target.id;
+          }
         }
       }
-    }
 
-    if (Object.keys(targetAliases).length) {
-      aliases[getDocKey(targetDoc)] = targetAliases;
+      if (Object.keys(targetAliases).length) {
+        aliases[getDocKey(targetDoc)] = targetAliases;
+      }
     }
   }
 

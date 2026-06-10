@@ -3,7 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readContentModel } from './content-model.mjs';
-import { renderDocContent } from './render-doc.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
 import { findNodePath, getNavNodeKey, normalizeBasePath } from './shared-utils.mjs';
@@ -20,6 +19,19 @@ const template = fs.readFileSync(templatePath, 'utf8');
 const { docs, nav } = readContentModel(docsDir);
 const gitUpdatedAtByPath = getGitUpdatedAtByPath(docs.map((doc) => doc.path));
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
+
+/**
+ * Pre-rendered HTML loaded from dist/doc-content — written by generate-content-data.mjs
+ * earlier in the build pipeline. Avoids re-running MarkdownIt for every page.
+ */
+const renderedHtmlByKey = new Map(
+  docs.map((doc) => {
+    const jsonPath = path.join(distDir, 'doc-content', doc.lang, ...doc.id.split('/'), 'index.json');
+    const html = JSON.parse(fs.readFileSync(jsonPath, 'utf8')).html ?? '';
+    return [getDocKey(doc), html];
+  }),
+);
+
 const pages = getCanonicalDocs()
   .filter((doc) => doc.id !== 'index')
   .map((doc) => ({
@@ -75,8 +87,8 @@ async function writePage(doc, canonicalPath, outputPath) {
 function renderStaticBody(activeDoc) {
   const copy = readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = renderDocContent(activeDoc.content, activeDoc.lang, { basePath, docId: activeDoc.id }).html;
-  const docKey = `${activeDoc.lang}:${activeDoc.id}`;
+  const article = renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
+  const docKey = getDocKey(activeDoc);
 
   return `
     <div class="layout" data-nav-open="false" data-toc-open="false" style="--toc-width: 360px">
@@ -276,14 +288,22 @@ function formatSitemapDate(value) {
   return value.toISOString().slice(0, 10);
 }
 
+const labelsCache = new Map();
+
 function readLabels(lang) {
+  if (labelsCache.has(lang)) return labelsCache.get(lang);
+
   const localePath = path.join(rootDir, 'src', 'locales', `${lang}.json`);
+  const result = fs.existsSync(localePath)
+    ? JSON.parse(fs.readFileSync(localePath, 'utf8'))
+    : {};
 
-  if (!fs.existsSync(localePath)) {
-    return {};
-  }
+  labelsCache.set(lang, result);
+  return result;
+}
 
-  return JSON.parse(fs.readFileSync(localePath, 'utf8'));
+function getDocKey(doc) {
+  return `${doc.lang}:${doc.id}`;
 }
 
 /**
