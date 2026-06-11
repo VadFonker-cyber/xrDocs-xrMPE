@@ -1,9 +1,9 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
-import { flattenToc, getDocKey, normalizeBasePath, slash } from './shared-utils.mjs';
+import { flattenToc, getDocKey, listPublicFiles, normalizeBasePath, slash } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
@@ -15,7 +15,7 @@ export async function generateContentData(options = {}) {
   const generatedDir = path.join(projectRoot, 'src', 'generated');
   const docContentDir = path.join(publicDir, 'doc-content');
 
-  const { docs, nav } = readContentModel(docsDir);
+  const { docs, nav } = await readContentModel(docsDir);
   const searchIndex = docs.map((doc) => ({
     id: doc.id,
     lang: doc.lang,
@@ -25,36 +25,41 @@ export async function generateContentData(options = {}) {
     text: stripMarkdown(doc.content),
   }));
   const searchIndexByLang = groupSearchEntriesByLang(searchIndex);
-  const themeAssets = listPublicFiles(publicDir)
-    .map((file) => slash(path.relative(publicDir, file)))
-    .filter((file) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file))
-    .sort((a, b) => a.localeCompare(b));
-  const renderedDocs = new Map(
-    docs.map((doc) => [
+  const themeAssetsPromise = listPublicFiles(fs, publicDir, { joinPath: path.join })
+    .then((files) => files
+      .map((file) => slash(path.relative(publicDir, file)))
+      .filter((file) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(file))
+      .sort((a, b) => a.localeCompare(b)));
+  const renderedDocEntriesPromise = Promise.all(docs.map(async (doc) => [
       getDocKey(doc),
-      renderDocContent(doc.content, doc.lang, { basePath, docId: doc.id }),
-    ]),
-  );
+      await renderDocContent(doc.content, doc.lang, { basePath, docId: doc.id }),
+    ]));
+  const cleanupPromise = cleanupGeneratedPublicOutputs(publicDir, docContentDir);
+
+  const [themeAssets, renderedDocEntries] = await Promise.all([
+    themeAssetsPromise,
+    renderedDocEntriesPromise,
+    cleanupPromise,
+    fs.mkdir(generatedDir, { recursive: true }),
+  ]);
+  const renderedDocs = new Map(renderedDocEntries);
   const headingAliases = buildHeadingAliases(docs, renderedDocs);
 
-  await fs.promises.mkdir(generatedDir, { recursive: true });
-  await cleanupGeneratedPublicOutputs(publicDir, docContentDir);
-
   await Promise.all([
-    fs.promises.writeFile(
+    fs.writeFile(
       path.join(generatedDir, 'docs-manifest.json'),
       `${JSON.stringify({ docs: docs.map(({ content, updatedAt, ...doc }) => doc), nav }, null, 2)}\n`,
     ),
-    fs.promises.writeFile(
+    fs.writeFile(
       path.join(generatedDir, 'theme-assets.json'),
       `${JSON.stringify(themeAssets, null, 2)}\n`,
     ),
-    fs.promises.writeFile(
+    fs.writeFile(
       path.join(generatedDir, 'heading-aliases.json'),
       `${JSON.stringify(headingAliases, null, 2)}\n`,
     ),
     ...Array.from(searchIndexByLang, ([lang, entries]) =>
-      fs.promises.writeFile(
+      fs.writeFile(
         path.join(publicDir, `search-index.${lang}.json`),
         `${JSON.stringify({ docs: entries })}\n`,
       ),
@@ -70,8 +75,8 @@ export async function generateContentData(options = {}) {
         throw new Error(`Rendered document was not found for ${doc.lang}:${doc.id}.`);
       }
 
-      await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-      await fs.promises.writeFile(outputPath, `${JSON.stringify(renderedDoc)}\n`);
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.writeFile(outputPath, `${JSON.stringify(renderedDoc)}\n`);
     }),
   );
 
@@ -81,22 +86,6 @@ export async function generateContentData(options = {}) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   generateContentData().then((result) => {
     console.log(`Generated metadata for ${result.docs} documentation pages.`);
-  });
-}
-
-function listPublicFiles(dir) {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const fullPath = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) {
-      return listPublicFiles(fullPath);
-    }
-
-    return entry.isFile() ? [fullPath] : [];
   });
 }
 
@@ -129,16 +118,21 @@ function groupSearchEntriesByLang(entries) {
 }
 
 async function cleanupGeneratedPublicOutputs(publicDir, docContentDir) {
-  const entries = fs.existsSync(publicDir)
-    ? await fs.promises.readdir(publicDir, { withFileTypes: true })
-    : [];
+  const entries = await fs.readdir(publicDir, { withFileTypes: true })
+    .catch((error) => {
+      if (error.code === 'ENOENT') {
+        return [];
+      }
+
+      throw error;
+    });
   const staleSearchIndexFiles = entries
     .filter((entry) => entry.isFile() && /^search-index(?:\.[^.]+)?\.json$/i.test(entry.name))
-    .map((entry) => fs.promises.rm(path.join(publicDir, entry.name), { force: true }));
+    .map((entry) => fs.rm(path.join(publicDir, entry.name), { force: true }));
 
   await Promise.all([
-    fs.promises.rm(path.join(publicDir, 'doc-content.json'), { force: true }),
-    fs.promises.rm(docContentDir, { recursive: true, force: true }),
+    fs.rm(path.join(publicDir, 'doc-content.json'), { force: true }),
+    fs.rm(docContentDir, { recursive: true, force: true }),
     ...staleSearchIndexFiles,
   ]);
 }

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { slash } from './shared-utils.mjs';
+import { listPublicFiles as listPublicFilesShared, slash } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicDir = path.join(rootDir, 'public');
@@ -122,30 +122,11 @@ const shouldSkipPublicDir = (dirPath) => {
   return relativePath === 'doc-content' || relativePath.startsWith('doc-content/');
 };
 
-const listPublicFiles = async (dirPath) => {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const files = [];
-
-  await Promise.all(
-    entries.map(async (entry) => {
-      const filePath = path.join(dirPath, entry.name);
-
-      if (entry.isDirectory()) {
-        if (!shouldSkipPublicDir(filePath)) {
-          files.push(...(await listPublicFiles(filePath)));
-        }
-
-        return;
-      }
-
-      if (entry.isFile()) {
-        files.push(filePath);
-      }
-    }),
-  );
-
-  return files;
-};
+const listOptimizablePublicFiles = () =>
+  listPublicFilesShared(fs, publicDir, {
+    joinPath: path.join,
+    shouldSkipDir: shouldSkipPublicDir,
+  });
 
 const isConvertibleRasterSource = (filePath) =>
   avifSourceExtensions.has(path.extname(filePath).toLowerCase());
@@ -167,7 +148,7 @@ const getTempOutputPath = (outputPath) =>
 
 const collectAvifOutputs = async () => {
   const outputMap = new Map();
-  const files = (await listPublicFiles(publicDir)).filter(isConvertibleRasterSource);
+  const files = (await listOptimizablePublicFiles()).filter(isConvertibleRasterSource);
 
   files.forEach((sourcePath) => {
     const outputPath = getAvifOutputPath(sourcePath);
@@ -380,7 +361,7 @@ const readRasterAssetInfo = async (filePath) => {
 };
 
 const readRasterAssetInfos = async () => {
-  const files = (await listPublicFiles(publicDir)).filter(isRasterAsset);
+  const files = (await listOptimizablePublicFiles()).filter(isRasterAsset);
   const infos = await Promise.all(files.map(readRasterAssetInfo));
   return infos
     .filter(Boolean)

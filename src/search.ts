@@ -3,6 +3,7 @@ import { compareDocs, getDocByKey, type Doc, type Lang } from './docs';
 import { getLabel } from './locales';
 import { getAssetUrl, getDocUrl } from './routing';
 import { collectEvent } from './statistics';
+import { debounce } from './utils/debounce';
 import { escapeHtml, escapeRegExp } from './utils/html';
 import { normalizeSearch } from './utils/search';
 
@@ -12,30 +13,32 @@ type SearchResult = {
   excerpt: string;
 };
 
-type SearchIndexEntry = {
+type RawSearchIndexEntry = {
   id: string;
   lang: Lang;
   path: string;
   title: string;
   section: string;
   text: string;
-  searchText?: string;
-  searchTitle?: string;
-  searchSection?: string;
+};
+
+type NormalizedSearchEntry = RawSearchIndexEntry & {
+  searchText: string;
+  searchTitle: string;
+  searchSection: string;
 };
 
 type SearchIndex = {
-  docs: SearchIndexEntry[];
+  docs: RawSearchIndexEntry[];
 };
 
-let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
 let cachedHighlighterKey = '';
 let cachedHighlighter: ((value: string) => string) | undefined;
-const searchIndexPromises = new Map<Lang, Promise<SearchIndexEntry[]>>();
-const searchEntriesByLang = new Map<Lang, SearchIndexEntry[]>();
+const searchIndexPromises = new Map<Lang, Promise<NormalizedSearchEntry[]>>();
+const searchEntriesByLang = new Map<Lang, NormalizedSearchEntry[]>();
 
-export async function loadSearchIndex(lang: Lang): Promise<SearchIndexEntry[]> {
+export async function loadSearchIndex(lang: Lang): Promise<NormalizedSearchEntry[]> {
   const cachedEntries = searchEntriesByLang.get(lang);
 
   if (cachedEntries) {
@@ -54,7 +57,9 @@ export async function loadSearchIndex(lang: Lang): Promise<SearchIndexEntry[]> {
         return response.json() as Promise<SearchIndex>;
       })
       .then((index) => {
-        const entries = index.docs.filter((entry) => entry.lang === lang);
+        const entries = index.docs
+          .filter((entry) => entry.lang === lang)
+          .map(normalizeSearchEntry);
         searchEntriesByLang.set(lang, entries);
         return entries;
       });
@@ -107,7 +112,7 @@ export async function renderSearchResults(
   `;
 }
 
-function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang): SearchResult[] {
+function getSearchResults(query: string, entries: NormalizedSearchEntry[], lang: Lang): SearchResult[] {
   const normalizedQuery = normalizeSearch(query, lang);
   const terms = normalizedQuery.split(/\s+/).filter(Boolean);
 
@@ -123,9 +128,9 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
         return undefined;
       }
 
-      const title = getEntryTitle(entry);
-      const section = getEntrySection(entry);
-      const content = getSearchEntryText(entry);
+      const title = entry.searchTitle;
+      const section = entry.searchSection;
+      const content = entry.searchText;
       let score = 0;
 
       for (const term of terms) {
@@ -153,11 +158,10 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
     .sort((a, b) => b.score - a.score || compareDocs(a.doc, b.doc));
 }
 
-function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {
+function createExcerpt(entry: NormalizedSearchEntry, terms: string[]): string {
   const text = entry.text;
-  const normalized = normalizeSearch(text, entry.lang);
   const firstMatch = terms
-    .map((term) => normalized.indexOf(term))
+    .map((term) => entry.searchText.indexOf(term))
     .filter((index) => index >= 0)
     .sort((a, b) => a - b)[0];
   const start = Math.max(0, (firstMatch ?? 0) - 70);
@@ -168,28 +172,13 @@ function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {
   return `${prefix}${text.slice(start, end).trim()}${suffix}`;
 }
 
-function getSearchEntryText(entry: SearchIndexEntry): string {
-  if (!entry.searchText) {
-    entry.searchText = normalizeSearch(entry.text, entry.lang);
-  }
-
-  return entry.searchText;
-}
-
-function getEntryTitle(entry: SearchIndexEntry): string {
-  if (!entry.searchTitle) {
-    entry.searchTitle = normalizeSearch(entry.title, entry.lang);
-  }
-
-  return entry.searchTitle;
-}
-
-function getEntrySection(entry: SearchIndexEntry): string {
-  if (!entry.searchSection) {
-    entry.searchSection = normalizeSearch(entry.section, entry.lang);
-  }
-
-  return entry.searchSection;
+function normalizeSearchEntry(entry: RawSearchIndexEntry): NormalizedSearchEntry {
+  return {
+    ...entry,
+    searchText: normalizeSearch(entry.text, entry.lang),
+    searchTitle: normalizeSearch(entry.title, entry.lang),
+    searchSection: normalizeSearch(entry.section, entry.lang),
+  };
 }
 
 function buildHighlighter(query: string, lang: Lang): (value: string) => string {
@@ -220,27 +209,25 @@ function buildHighlighter(query: string, lang: Lang): (value: string) => string 
 function scheduleSearchStatistics(context: AppContext, query: string, resultCount: number): void {
   const normalizedQuery = query.trim();
 
-  if (searchStatisticsTimer !== undefined) {
-    window.clearTimeout(searchStatisticsTimer);
-    searchStatisticsTimer = undefined;
-  }
-
   if (normalizedQuery.length < 2) {
+    collectSearchStatistics.cancel();
     return;
   }
 
-  searchStatisticsTimer = window.setTimeout(() => {
-    const key = `${context.state.lang}:${normalizedQuery.toLocaleLowerCase(context.state.lang)}`;
-
-    if (key === lastCollectedSearch) {
-      return;
-    }
-
-    lastCollectedSearch = key;
-    collectEvent('search', {
-      lang: context.state.lang,
-      query_length: normalizedQuery.length,
-      results: resultCount,
-    });
-  }, 600);
+  collectSearchStatistics(context, normalizedQuery, resultCount);
 }
+
+const collectSearchStatistics = debounce((context: AppContext, normalizedQuery: string, resultCount: number) => {
+  const key = `${context.state.lang}:${normalizedQuery.toLocaleLowerCase(context.state.lang)}`;
+
+  if (key === lastCollectedSearch) {
+    return;
+  }
+
+  lastCollectedSearch = key;
+  collectEvent('search', {
+    lang: context.state.lang,
+    query_length: normalizedQuery.length,
+    results: resultCount,
+  });
+}, 600);

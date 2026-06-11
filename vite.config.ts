@@ -2,12 +2,12 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import { generateContentData } from './scripts/generate-content-data.mjs';
+import { debounce } from './src/utils/debounce';
 
 const markdownWatchPattern = /[/\\]docs[/\\](?:ru|en)[/\\].+\.md$/i;
 
 function docsContentReloadPlugin(): Plugin {
   let server: ViteDevServer;
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingFile = '';
   // Cache of known markdown module files — avoids scanning the entire module graph on every .md change
   const rawMarkdownModuleFiles = new Set<string>();
@@ -38,17 +38,13 @@ function docsContentReloadPlugin(): Plugin {
     }
   };
 
+  const debouncedGeneration = debounce((reason: string) => {
+    void runGeneration(reason, true);
+  }, 120);
+
   const scheduleGeneration = (reason: string, file: string) => {
     pendingFile = file;
-
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-
-    debounceTimer = setTimeout(() => {
-      debounceTimer = undefined;
-      void runGeneration(reason, true);
-    }, 120);
+    debouncedGeneration(reason);
   };
 
   return {

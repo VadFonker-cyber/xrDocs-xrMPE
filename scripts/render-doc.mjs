@@ -1,41 +1,38 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import { createMarkdownRenderer } from './markdown-renderer-core.mjs';
 import { getDefaultCalloutTitle, getLocaleLabel } from './markdown-shared.mjs';
+import { buildDocUrl } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const assetMetadata = readAssetMetadata();
+const rendererPromise = createRenderer();
 
-const renderer = createMarkdownRenderer({
-  MarkdownIt,
-  assetMetadata,
-  getAssetUrl: getAssetPath,
-  getCalloutTitle: getDefaultCalloutTitle,
-  getDocUrl: getDocPath,
-  getLabel: getLocaleLabel,
-});
-
-export const { renderDocContent } = renderer;
-
-function getDocPath(id, basePath) {
-  if (id === 'index') {
-    return basePath;
-  }
-
-  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return encodedId ? `${basePath}${encodedId}/` : basePath;
+export async function renderDocContent(content, lang, options) {
+  const renderer = await rendererPromise;
+  return renderer.renderDocContent(content, lang, options);
 }
 
 function getAssetPath(src, basePath) {
   return `${basePath}${src.replace(/^\.?\//, '')}`;
 }
 
-function readAssetMetadata() {
+async function createRenderer() {
+  return createMarkdownRenderer({
+    MarkdownIt,
+    assetMetadata: await readAssetMetadata(),
+    getAssetUrl: getAssetPath,
+    getCalloutTitle: getDefaultCalloutTitle,
+    getDocUrl: buildDocUrl,
+    getLabel: getLocaleLabel,
+  });
+}
+
+async function readAssetMetadata() {
   try {
     return JSON.parse(
-      fs.readFileSync(path.join(rootDir, 'src', 'generated', 'asset-metadata.json'), 'utf8'),
+      await fs.readFile(path.join(rootDir, 'src', 'generated', 'asset-metadata.json'), 'utf8'),
     );
   } catch (error) {
     if (error.code !== 'ENOENT') {

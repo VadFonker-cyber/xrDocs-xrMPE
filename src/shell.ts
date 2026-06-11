@@ -3,6 +3,7 @@ import { getDocCacheKey } from './article';
 import type { Doc } from './docs';
 import { getLabel, labels } from './locales';
 import { basePath, getAssetUrl, navigateToLink, readRouteFromPath } from './routing';
+import { loadSearchModule } from './search-loader';
 import { getNextThemePreference, getResolvedTheme } from './theme';
 import { getTocTitle, highlightHashTarget, highlightHeading, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
 import { escapeHtml } from './utils/html';
@@ -34,7 +35,6 @@ type ShellRefs = {
 let shellRefs: ShellRefs | null = null;
 let nextCodeCopyRequestId = 0;
 let copyToastTimer: number | undefined;
-let searchModulePromise: Promise<typeof import('./search')> | undefined;
 const codeCopyRequestIds = new WeakMap<HTMLButtonElement, number>();
 const codeCopyResetTimers = new WeakMap<HTMLButtonElement, number>();
 
@@ -131,8 +131,7 @@ function bindShellEvents(context: AppContext): void {
   });
 
   searchInput?.addEventListener('focus', () => {
-    searchModulePromise ??= import('./search');
-    void searchModulePromise.then(({ loadSearchIndex }) => {
+    void loadSearchModule().then(({ loadSearchIndex }) => {
       void loadSearchIndex(context.state.lang);
     });
   });
@@ -306,9 +305,9 @@ function bindShellEvents(context: AppContext): void {
   });
 
   window.addEventListener('hashchange', () => {
-    window.setTimeout(() => {
+    window.requestAnimationFrame(() => {
       highlightHashTarget(context);
-    }, 0);
+    });
   });
 }
 

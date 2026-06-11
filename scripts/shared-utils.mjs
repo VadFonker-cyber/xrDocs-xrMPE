@@ -1,13 +1,24 @@
 export function normalizeBasePath(value) {
-  if (!value || value === './') {
+  const normalized = (value || '').replace(/^\/+|\/+$/g, '');
+
+  if (!normalized || value === './') {
     return '/';
   }
 
-  return `/${value.replace(/^\/+|\/+$/g, '')}/`;
+  return `/${normalized}/`;
 }
 
 export function slash(value) {
   return value.replace(/\\/g, '/');
+}
+
+export function buildDocUrl(id, basePath) {
+  if (id === 'index') {
+    return basePath;
+  }
+
+  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  return encodedId ? `${basePath}${encodedId}/` : basePath;
 }
 
 export function getDocKey(doc) {
@@ -23,7 +34,6 @@ export function flattenToc(items, result = []) {
   return result;
 }
 
-// Keep in sync with src/docs.ts — same ordering logic used client-side.
 export function compareDocs(a, b) {
   if (a.lang !== b.lang) {
     return a.lang.localeCompare(b.lang);
@@ -40,12 +50,10 @@ export function compareDocs(a, b) {
   return a.title.localeCompare(b.title, a.lang);
 }
 
-// Keep in sync with src/nav.ts — same key format used client-side.
 export function getNavNodeKey(node) {
   return node.id || `${node.depth}:${node.order}:${node.title}`;
 }
 
-// Keep in sync with src/docs.ts — same traversal used client-side.
 export function findNodePath(nodes, id) {
   for (const node of nodes) {
     if (node.id === id) {
@@ -72,4 +80,42 @@ export function findNavNodePath(nav, lang, id) {
   }
 
   return [];
+}
+
+export async function listPublicFiles(fs, dirPath, options = {}) {
+  const joinPath = options.joinPath || ((dir, name) => `${dir.replace(/[\\/]+$/g, '')}/${name}`);
+  const shouldSkipDir = options.shouldSkipDir || (() => false);
+  let entries;
+
+  try {
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+
+    throw error;
+  }
+
+  const files = [];
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      const filePath = joinPath(dirPath, entry.name);
+
+      if (entry.isDirectory()) {
+        if (!shouldSkipDir(filePath)) {
+          files.push(...(await listPublicFiles(fs, filePath, options)));
+        }
+
+        return;
+      }
+
+      if (entry.isFile()) {
+        files.push(filePath);
+      }
+    }),
+  );
+
+  return files;
 }

@@ -1,34 +1,49 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { compareDocs, slash } from './shared-utils.mjs';
 
-export function readContentModel(docsDir) {
+export async function readContentModel(docsDir) {
+  const [ruNav, enNav] = await Promise.all([
+    parseInit(docsDir, 'ru'),
+    parseInit(docsDir, 'en'),
+  ]);
   const nav = {
-    ru: parseInit(docsDir, 'ru'),
-    en: parseInit(docsDir, 'en'),
+    ru: ruNav,
+    en: enNav,
   };
   const navEntries = {
     ru: flattenNav(nav.ru),
     en: flattenNav(nav.en),
   };
-  const docs = ['ru', 'en']
-    .flatMap((lang) => createDocsFromNav(docsDir, lang, navEntries[lang]))
+  const docsByLang = await Promise.all(
+    ['ru', 'en'].map((lang) => createDocsFromNav(docsDir, lang, navEntries[lang])),
+  );
+  const docs = docsByLang
+    .flat()
     .sort(compareDocs);
 
   return { docs, nav, navEntries };
 }
 
-function parseInit(docsDir, lang) {
+async function parseInit(docsDir, lang) {
   const initPath = path.join(docsDir, lang, 'init.md');
+  let content;
 
-  if (!fs.existsSync(initPath)) {
-    return [];
+  try {
+    content = await fs.readFile(initPath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+
+    throw error;
   }
 
   const sections = [];
   let currentSection;
   let stack = [];
   let order = 0;
+  const linkValidations = [];
 
   const ensureSection = (title) => {
     const nextTitle = title || currentSection?.title || 'Documents';
@@ -42,7 +57,7 @@ function parseInit(docsDir, lang) {
     return currentSection;
   };
 
-  for (const rawLine of fs.readFileSync(initPath, 'utf8').split('\n')) {
+  for (const rawLine of content.split('\n')) {
     const heading = rawLine.trim().match(/^#{1,6}\s+(.+)$/);
 
     if (heading) {
@@ -76,7 +91,7 @@ function parseInit(docsDir, lang) {
       if (id && id !== 'init') {
         node.id = id;
         node.path = `docs/${lang}/${id}.md`;
-        validateDocLink(docsDir, lang, node);
+        linkValidations.push(validateDocLink(docsDir, lang, node));
       }
     }
 
@@ -85,6 +100,7 @@ function parseInit(docsDir, lang) {
     order += 1;
   }
 
+  await Promise.all(linkValidations);
   return sections.filter((section) => section.children.length > 0);
 }
 
@@ -130,10 +146,10 @@ function collectNodes(nodes, section, entries) {
   }
 }
 
-function createDocsFromNav(docsDir, lang, entries) {
+async function createDocsFromNav(docsDir, lang, entries) {
   const seen = new Set();
 
-  return entries
+  const uniqueEntries = entries
     .filter((entry) => {
       if (seen.has(entry.id)) {
         return false;
@@ -141,11 +157,16 @@ function createDocsFromNav(docsDir, lang, entries) {
 
       seen.add(entry.id);
       return true;
-    })
-    .map((entry) => {
+    });
+
+  return Promise.all(
+    uniqueEntries.map(async (entry) => {
       const file = getDocFilePath(docsDir, lang, entry.id);
-      const raw = fs.readFileSync(file, 'utf8');
-      const updatedAt = fs.statSync(file).mtime;
+      const [raw, stats] = await Promise.all([
+        fs.readFile(file, 'utf8'),
+        fs.stat(file),
+      ]);
+      const updatedAt = stats.mtime;
       const relative = slash(path.relative(docsDir, file));
 
       return {
@@ -158,13 +179,20 @@ function createDocsFromNav(docsDir, lang, entries) {
         section: entry.section || 'Documents',
         order: entry.order,
       };
-    });
+    }),
+  );
 }
 
-function validateDocLink(docsDir, lang, node) {
+async function validateDocLink(docsDir, lang, node) {
   const file = getDocFilePath(docsDir, lang, node.id);
 
-  if (!fs.existsSync(file)) {
+  try {
+    await fs.access(file);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+
     throw new Error(
       `Missing Markdown file referenced from init.md: lang=${lang}, title="${node.title}", path="${node.path}".`,
     );

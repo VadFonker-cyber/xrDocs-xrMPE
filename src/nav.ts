@@ -2,10 +2,11 @@ import type { AppContext } from './app-context';
 import { findNavNodePath, navTree, type NavNode } from './docs';
 import { getDocUrl } from './routing';
 import { getLabel } from './locales';
+import { loadSearchModule } from './search-loader';
+import { getNavNodeKey as getNavNodeKeyShared } from '../scripts/shared-utils.mjs';
 import { renderNavSections } from '../scripts/nav-renderer.mjs';
 
 let searchRenderRequest = 0;
-let searchModulePromise: Promise<typeof import('./search')> | undefined;
 
 export function renderNav(context: AppContext): void {
   const nav = document.querySelector<HTMLElement>('#docNav');
@@ -18,8 +19,7 @@ export function renderNav(context: AppContext): void {
 
   if (query) {
     const request = ++searchRenderRequest;
-    searchModulePromise ??= import('./search');
-    void searchModulePromise.then(({ renderSearchResults }) => {
+    void loadSearchModule().then(({ renderSearchResults }) => {
       void renderSearchResults(context, nav, query, request, () => searchRenderRequest);
     });
     return;
@@ -46,5 +46,5 @@ export function renderNav(context: AppContext): void {
 }
 
 export function getNavNodeKey(node: NavNode): string {
-  return node.id || `${node.depth}:${node.order}:${node.title}`;
+  return getNavNodeKeyShared(node);
 }

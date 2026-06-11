@@ -1,11 +1,12 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { readContentModel } from './content-model.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
-import { findNavNodePath, getDocKey, getNavNodeKey, normalizeBasePath, slash } from './shared-utils.mjs';
+import { buildDocUrl, findNavNodePath, getDocKey, getNavNodeKey, normalizeBasePath, slash } from './shared-utils.mjs';
 import { renderShellHtml } from './shell-template.mjs';
 import { renderNavSections } from './nav-renderer.mjs';
 
@@ -13,31 +14,35 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const docsDir = path.join(rootDir, 'docs');
 const distDir = path.join(rootDir, 'dist');
 const templatePath = path.join(distDir, 'index.html');
+const execFileAsync = promisify(execFile);
 const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/');
 const noindex = isTruthyEnv(process.env.NOINDEX);
 const skipGitUpdatedAt = isTruthyEnv(process.env.SKIP_GIT_UPDATED_AT);
 const labelsCache = new Map();
 
-const template = fs.readFileSync(templatePath, 'utf8');
-const { docs, nav } = readContentModel(docsDir);
+const [template, contentModel] = await Promise.all([
+  fs.readFile(templatePath, 'utf8'),
+  readContentModel(docsDir),
+]);
+const { docs, nav } = contentModel;
 const shouldReadGitUpdatedAt = !noindex && !skipGitUpdatedAt;
-const gitUpdatedAtByPath = shouldReadGitUpdatedAt
+const gitUpdatedAtByPathPromise = shouldReadGitUpdatedAt
   ? getGitUpdatedAtByPath(docs.map((doc) => doc.path))
-  : new Map();
+  : Promise.resolve(new Map());
+let gitUpdatedAtByPath = new Map();
 const firstByLang = new Map(['ru', 'en'].map((lang) => [lang, docs.find((doc) => doc.lang === lang)]));
 
 /**
  * Pre-rendered HTML loaded from dist/doc-content — written by generate-content-data.mjs
  * earlier in the build pipeline. Avoids re-running MarkdownIt for every page.
  */
-const renderedHtmlByKey = new Map(
-  docs.map((doc) => {
+const renderedHtmlEntriesPromise = Promise.all(docs.map(async (doc) => {
     const jsonPath = path.join(distDir, 'doc-content', doc.lang, ...doc.id.split('/'), 'index.json');
-    const html = JSON.parse(fs.readFileSync(jsonPath, 'utf8')).html ?? '';
+    const html = JSON.parse(await fs.readFile(jsonPath, 'utf8')).html ?? '';
     return [getDocKey(doc), html];
-  }),
-);
+  }));
+const renderedHtmlByKey = new Map(await renderedHtmlEntriesPromise);
 
 const pages = getCanonicalDocs()
   .filter((doc) => doc.id !== 'index')
@@ -55,11 +60,13 @@ if (defaultDoc) {
   await writeNotFoundPage(defaultDoc, path.join(distDir, '404.html'));
 }
 
+gitUpdatedAtByPath = await gitUpdatedAtByPathPromise;
+
 if (!noindex) {
-  writeSitemap(pages);
+  await writeSitemap(pages);
 }
 
-writeRobots();
+await writeRobots();
 
 console.log(`Prerendered ${pages.length} documentation pages.`);
 
@@ -67,7 +74,7 @@ async function writePage(doc, canonicalPath, outputPath) {
   const title = `${doc.title} | ${siteName}`;
   const description = siteMeta[doc.lang].description;
   const canonicalUrl = toAbsoluteUrl(canonicalPath);
-  const body = renderStaticBody(doc);
+  const body = await renderStaticBody(doc);
 
   const patches = [
     { attribute: 'name', name: 'description', content: description },
@@ -88,15 +95,15 @@ async function writePage(doc, canonicalPath, outputPath) {
 
   html = applyMetaPatches(html, patches, linkPatches);
 
-  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.promises.writeFile(outputPath, html);
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, html);
 }
 
 async function writeNotFoundPage(defaultDoc, outputPath) {
-  const copy = readLabels(defaultDoc.lang);
+  const copy = await readLabels(defaultDoc.lang);
   const title = `${copy['notFound.title'] || 'Page not found'} | ${siteName}`;
   const description = copy['notFound.message'] || siteMeta[defaultDoc.lang].description;
-  const body = renderStaticBody(
+  const body = await renderStaticBody(
     {
       ...defaultDoc,
       id: '__404__',
@@ -122,14 +129,14 @@ async function writeNotFoundPage(defaultDoc, outputPath) {
 
   html = applyMetaPatches(html, patches, []);
 
-  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.promises.writeFile(outputPath, html);
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, html);
 }
 
-function renderStaticBody(activeDoc, options = {}) {
-  const copy = readLabels(activeDoc.lang);
+async function renderStaticBody(activeDoc, options = {}) {
+  const copy = await readLabels(activeDoc.lang);
   const nav = renderStaticNav(activeDoc);
-  const article = options.notFound ? renderStaticNotFoundArticle(activeDoc.lang) : renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
+  const article = options.notFound ? await renderStaticNotFoundArticle(activeDoc.lang) : renderedHtmlByKey.get(getDocKey(activeDoc)) ?? '';
   const docKey = options.notFound ? `404:${activeDoc.lang}` : getDocKey(activeDoc);
   const articleAttributes = options.notFound
     ? ` data-doc-key="${escapeHtml(docKey)}"`
@@ -147,8 +154,8 @@ function renderStaticBody(activeDoc, options = {}) {
   });
 }
 
-function renderStaticNotFoundArticle(lang) {
-  const copy = readLabels(lang);
+async function renderStaticNotFoundArticle(lang) {
+  const copy = await readLabels(lang);
 
   return `
     <div class="not-found">
@@ -173,7 +180,7 @@ function renderStaticNav(activeDoc) {
   });
 }
 
-function writeSitemap(pages) {
+async function writeSitemap(pages) {
   const defaultUpdatedAt = getLatestUpdatedAt(docs);
   const urls = [{ canonicalPath: '/', updatedAt: defaultUpdatedAt }, ...pages]
     .map(
@@ -183,16 +190,16 @@ function writeSitemap(pages) {
     .join('\n');
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 
-  fs.writeFileSync(path.join(distDir, 'sitemap.xml'), xml);
+  await fs.writeFile(path.join(distDir, 'sitemap.xml'), xml);
 }
 
-function writeRobots() {
+async function writeRobots() {
   if (noindex) {
-    fs.writeFileSync(path.join(distDir, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
+    await fs.writeFile(path.join(distDir, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
     return;
   }
 
-  fs.writeFileSync(
+  await fs.writeFile(
     path.join(distDir, 'robots.txt'),
     `User-agent: *\nAllow: /\n\nSitemap: ${toAbsoluteUrl('/sitemap.xml')}\n`,
   );
@@ -219,7 +226,7 @@ function getDocUpdatedAt(doc) {
   return gitUpdatedAt || doc.updatedAt || new Date(0);
 }
 
-function getGitUpdatedAtByPath(relativePaths) {
+async function getGitUpdatedAtByPath(relativePaths) {
   const uniquePaths = [...new Set(relativePaths)].filter(Boolean);
 
   if (!uniquePaths.length) {
@@ -227,14 +234,14 @@ function getGitUpdatedAtByPath(relativePaths) {
   }
 
   try {
-    const output = execFileSync('git', ['-C', rootDir, 'log', '--format=__COMMIT__%cI', '--name-only', '--', ...uniquePaths], {
+    const { stdout } = await execFileAsync('git', ['-C', rootDir, 'log', '--format=__COMMIT__%cI', '--name-only', '--', ...uniquePaths], {
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     });
     const dates = new Map();
     let commitDate;
 
-    for (const line of output.split(/\r?\n/)) {
+    for (const line of stdout.split(/\r?\n/)) {
       if (line.startsWith('__COMMIT__')) {
         commitDate = new Date(line.slice('__COMMIT__'.length));
         continue;
@@ -261,9 +268,15 @@ function readLabels(lang) {
   if (labelsCache.has(lang)) return labelsCache.get(lang);
 
   const localePath = path.join(rootDir, 'src', 'locales', `${lang}.json`);
-  const result = fs.existsSync(localePath)
-    ? JSON.parse(fs.readFileSync(localePath, 'utf8'))
-    : {};
+  const result = fs.readFile(localePath, 'utf8')
+    .then((content) => JSON.parse(content))
+    .catch((error) => {
+      if (error.code === 'ENOENT') {
+        return {};
+      }
+
+      throw error;
+    });
 
   labelsCache.set(lang, result);
   return result;
@@ -336,12 +349,7 @@ function compareCanonicalDocs(a, b) {
 }
 
 function getDocPath(id) {
-  if (id === 'index') {
-    return basePath;
-  }
-
-  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return encodedId ? `${basePath}${encodedId}/` : basePath;
+  return buildDocUrl(id, basePath);
 }
 
 function getAssetPath(src) {

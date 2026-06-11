@@ -1,3 +1,5 @@
+import { debounce, type DebouncedFunction } from './utils/debounce';
+
 type StatisticParams = Record<string, string | number | boolean | undefined>;
 type StateChangeParams = StatisticParams & {
   from: string;
@@ -53,7 +55,7 @@ type PendingStateChange = {
   from: string;
   to: string;
   params: StatisticParams;
-  timer: number | undefined;
+  flush: DebouncedFunction<() => void>;
 };
 
 let status: 'disabled' | 'loading' | 'ready' | 'failed' = shouldCollect ? 'loading' : 'disabled';
@@ -120,22 +122,16 @@ export function collectStateChangeEvent(event: string, params: StateChangeParams
 
   const pending = pendingStateChanges.get(event);
 
-  if (pending?.timer !== undefined) {
-    window.clearTimeout(pending.timer);
+  if (pending) {
+    pending.to = params.to;
+    pending.params = params;
+    pending.flush();
+    return;
   }
 
-  const nextPending: PendingStateChange = {
-    event,
-    from: pending?.from ?? params.from,
-    to: params.to,
-    params,
-    timer: window.setTimeout(() => {
-      pendingStateChanges.delete(event);
-      sendStateChangeEvent(nextPending);
-    }, stateChangeDebounceMs),
-  };
-
+  const nextPending = createPendingStateChange(event, params);
   pendingStateChanges.set(event, nextPending);
+  nextPending.flush();
 }
 
 function queueOrCollect(callback: () => void): void {
@@ -160,12 +156,27 @@ function flushPendingStateChangeEvents(): void {
   pendingStateChanges.clear();
 
   for (const pending of pendingEvents) {
-    if (pending.timer !== undefined) {
-      window.clearTimeout(pending.timer);
-    }
-
+    pending.flush.cancel();
     sendStateChangeEvent(pending);
   }
+}
+
+function createPendingStateChange(event: string, params: StateChangeParams): PendingStateChange {
+  let pending: PendingStateChange;
+  const flush = debounce(() => {
+    pendingStateChanges.delete(event);
+    sendStateChangeEvent(pending);
+  }, stateChangeDebounceMs);
+
+  pending = {
+    event,
+    from: params.from,
+    to: params.to,
+    params,
+    flush,
+  };
+
+  return pending;
 }
 
 function sendStateChangeEvent(pending: PendingStateChange): void {
@@ -258,24 +269,7 @@ function readOrCreateVisitorId(): string {
 }
 
 function createVisitorId(): string {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-
-  const bytes = new Uint8Array(16);
-
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256);
-    }
-  }
-
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-  return formatUuid(bytes);
+  return globalThis.crypto.randomUUID();
 }
 
 function readOrCreateFallbackVisitorId(): string {
@@ -285,18 +279,6 @@ function readOrCreateFallbackVisitorId(): string {
 
 function isVisitorId(value: string): boolean {
   return visitorIdPattern.test(value);
-}
-
-function formatUuid(bytes: Uint8Array): string {
-  const parts = [...bytes].map((byte) => byte.toString(16).padStart(2, '0'));
-
-  return [
-    parts.slice(0, 4).join(''),
-    parts.slice(4, 6).join(''),
-    parts.slice(6, 8).join(''),
-    parts.slice(8, 10).join(''),
-    parts.slice(10, 16).join(''),
-  ].join('-');
 }
 
 function reservePageView(url: string): boolean {

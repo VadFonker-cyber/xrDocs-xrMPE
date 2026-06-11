@@ -5,6 +5,7 @@ import { getLabel } from './locales';
 import { resolveHeadingAlias } from './heading-aliases';
 import { clamp, escapeHtml } from './utils/html';
 import { normalizeSearch } from './utils/search';
+import { flattenToc } from './utils/toc-builder';
 import { maxTocWidth, minTocWidth } from './state';
 
 let headingObserver: IntersectionObserver | undefined;
@@ -393,12 +394,12 @@ function observeArticleHeadings(context: AppContext, article: HTMLElement): void
     }
 
     setActiveHeading(context, hashId);
-    window.setTimeout(() => {
+    window.requestAnimationFrame(() => {
       hashTarget.scrollIntoView({ block: 'start' });
       setActiveHeading(context, hashId);
       highlightHeading(hashTarget);
       headings.forEach((heading) => headingObserver?.observe(heading));
-    }, 0);
+    });
     return;
   }
 
@@ -408,8 +409,9 @@ function observeArticleHeadings(context: AppContext, article: HTMLElement): void
 
 function expandTocAncestors(context: AppContext, id: string): boolean {
   if (!tocItemById) {
-    tocItemById = new Map<string, TocItem>();
-    flattenToc(currentTocItems).forEach((item) => tocItemById!.set(item.id, item));
+    const map = new Map<string, TocItem>();
+    flattenToc(currentTocItems).forEach((item) => map.set(item.id, item));
+    tocItemById = map;
   }
 
   let current = tocItemById.get(id);
@@ -424,14 +426,6 @@ function expandTocAncestors(context: AppContext, id: string): boolean {
   }
 
   return changed;
-}
-
-function flattenToc(items: TocItem[], result: TocItem[] = []): TocItem[] {
-  for (const item of items) {
-    result.push(item);
-    flattenToc(item.children, result);
-  }
-  return result;
 }
 
 function updateActiveTocLink(context: AppContext): void {
