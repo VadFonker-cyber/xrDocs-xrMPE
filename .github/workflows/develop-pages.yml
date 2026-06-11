@@ -81,6 +81,7 @@ jobs:
         env:
           SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/
           VITE_BASE_PATH: /xrDocs-xrMPE/
+          VITE_UMAMI_DOMAINS: vadfonker-cyber.github.io
           VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
           VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: npm run build
@@ -109,6 +110,7 @@ jobs:
           SKIP_GIT_UPDATED_AT: true
           SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/develop/
           VITE_BASE_PATH: /xrDocs-xrMPE/develop/
+          VITE_UMAMI_DOMAINS: vadfonker-cyber.github.io
           VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
           VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: npm run build

@@ -6,7 +6,7 @@ import { renderNav as renderNavModule } from './nav';
 import { getDocUrl, readRoute } from './routing';
 import { renderShell, renderTopbarControls, updateShellLabels, getShellRefs } from './shell';
 import { createAppState, type ThemePreference } from './state';
-import { collectEvent, collectPageView, initStatistics } from './statistics';
+import { collectPageView, collectStateChangeEvent, initStatistics } from './statistics';
 import { getResolvedTheme, updateThemeAssets } from './theme';
 import {
   renderToc as renderTocModule,
@@ -200,7 +200,7 @@ function switchLanguage(nextLang: Lang): void {
 
   if (state.notFound) {
     state.lang = nextLang;
-    collectEvent('language_switch', {
+    collectStateChangeEvent('language_switch', {
       from: previousLang,
       to: nextLang,
     });
@@ -222,7 +222,7 @@ function switchLanguage(nextLang: Lang): void {
   if (shouldUpdateUrl) {
     history.pushState(null, '', getDocUrl(nextDoc.id));
   }
-  collectEvent('language_switch', {
+  collectStateChangeEvent('language_switch', {
     from: previousLang,
     to: nextLang,
   });
@@ -234,12 +234,14 @@ function switchTheme(nextTheme: ThemePreference): void {
     return;
   }
 
+  const previousTheme = state.theme;
   state.theme = nextTheme;
   localStorage.setItem('xrDocsTheme', nextTheme);
   const resolved = getResolvedTheme(context);
   document.documentElement.dataset.theme = resolved;
-  collectEvent('theme_switch', {
-    theme: nextTheme,
+  collectStateChangeEvent('theme_switch', {
+    from: previousTheme,
+    to: nextTheme,
     resolved_theme: resolved,
   });
   const activeDoc = getActiveDoc();

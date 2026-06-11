@@ -1,4 +1,8 @@
 type StatisticParams = Record<string, string | number | boolean | undefined>;
+type StateChangeParams = StatisticParams & {
+  from: string;
+  to: string;
+};
 
 type PageView = {
   lang: string;
@@ -7,7 +11,7 @@ type PageView = {
 };
 
 type UmamiTracker = {
-  identify(id: string): void;
+  identify(payload: string | Record<string, unknown>, data?: Record<string, unknown>): void;
   track(): void;
   track(payload: Record<string, unknown> | ((props: Record<string, unknown>) => Record<string, unknown>)): void;
   track(eventName: string, data?: StatisticParams): void;
@@ -21,17 +25,46 @@ declare global {
 
 const websiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID?.trim() || '';
 const scriptUrl = import.meta.env.VITE_UMAMI_SCRIPT_URL?.trim() || '';
+const trackingDomains = import.meta.env.VITE_UMAMI_DOMAINS?.trim() || '';
 const enabledInDev = import.meta.env.VITE_ENABLE_STATISTICS_IN_DEV === 'true';
 const shouldCollect = Boolean(websiteId && scriptUrl && (import.meta.env.PROD || enabledInDev));
 const loadTimeoutMs = 8000;
 const maxQueuedEvents = 20;
 const visitorStorageKey = 'xrDocsVisitorId';
+const visitorIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const usageStorageKey = 'xrDocsStatisticsUsage:v1';
+const samePageViewCooldownMs = 5_000;
+const eventWindowMs = 60_000;
+const maxEventsPerWindow = 10;
+const maxSameEventPerWindow = 5;
+
+type UsageBucket = {
+  count: number;
+  expiresAt: number;
+};
+
+type UsageState = {
+  lastPageViews: Record<string, number>;
+  recent: Record<string, UsageBucket>;
+};
+
+type PendingStateChange = {
+  event: string;
+  from: string;
+  to: string;
+  params: StatisticParams;
+  timer: number | undefined;
+};
 
 let status: 'disabled' | 'loading' | 'ready' | 'failed' = shouldCollect ? 'loading' : 'disabled';
 let initialized = false;
 let identified = false;
 let loadTimeout: number | undefined;
 let queuedEvents: Array<() => void> = [];
+let fallbackVisitorId: string | undefined;
+let fallbackUsageState: UsageState = createUsageState();
+const pendingStateChanges = new Map<string, PendingStateChange>();
+const stateChangeDebounceMs = 1500;
 
 export function initStatistics(): void {
   if (!shouldCollect || initialized) {
@@ -39,10 +72,17 @@ export function initStatistics(): void {
   }
 
   initialized = true;
+  window.addEventListener('pagehide', flushPendingStateChangeEvents);
   loadUmamiScript();
 }
 
 export function collectPageView(page: PageView): void {
+  const url = new URL(page.path, window.location.origin).toString();
+
+  if (!reservePageView(url)) {
+    return;
+  }
+
   queueOrCollect(() => {
     window.umami?.track((props) => ({
       ...props,
@@ -51,20 +91,51 @@ export function collectPageView(page: PageView): void {
         lang: page.lang,
       }),
       title: page.title,
-      url: new URL(page.path, window.location.origin).toString(),
+      url,
     }));
   });
 }
 
 export function collectEvent(event: string, params: StatisticParams = {}): void {
+  const name = formatEventName(event);
+
+  if (!reserveEvent(name)) {
+    return;
+  }
+
   queueOrCollect(() => {
     window.umami?.track((props) => ({
       ...props,
       data: cleanParams(params),
       id: readOrCreateVisitorId(),
-      name: formatEventName(event),
+      name,
     }));
   });
+}
+
+export function collectStateChangeEvent(event: string, params: StateChangeParams): void {
+  if (!shouldCollect) {
+    return;
+  }
+
+  const pending = pendingStateChanges.get(event);
+
+  if (pending?.timer !== undefined) {
+    window.clearTimeout(pending.timer);
+  }
+
+  const nextPending: PendingStateChange = {
+    event,
+    from: pending?.from ?? params.from,
+    to: params.to,
+    params,
+    timer: window.setTimeout(() => {
+      pendingStateChanges.delete(event);
+      sendStateChangeEvent(nextPending);
+    }, stateChangeDebounceMs),
+  };
+
+  pendingStateChanges.set(event, nextPending);
 }
 
 function queueOrCollect(callback: () => void): void {
@@ -84,6 +155,31 @@ function queueOrCollect(callback: () => void): void {
   }
 }
 
+function flushPendingStateChangeEvents(): void {
+  const pendingEvents = [...pendingStateChanges.values()];
+  pendingStateChanges.clear();
+
+  for (const pending of pendingEvents) {
+    if (pending.timer !== undefined) {
+      window.clearTimeout(pending.timer);
+    }
+
+    sendStateChangeEvent(pending);
+  }
+}
+
+function sendStateChangeEvent(pending: PendingStateChange): void {
+  if (pending.from === pending.to) {
+    return;
+  }
+
+  collectEvent(pending.event, {
+    ...pending.params,
+    from: pending.from,
+    to: pending.to,
+  });
+}
+
 function loadUmamiScript(): void {
   const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${scriptUrl}"]`);
 
@@ -99,6 +195,9 @@ function loadUmamiScript(): void {
   script.defer = true;
   script.dataset.websiteId = websiteId;
   script.dataset.autoTrack = 'false';
+  if (trackingDomains) {
+    script.dataset.domains = trackingDomains;
+  }
   script.src = scriptUrl;
   script.onload = () => {
     status = 'ready';
@@ -134,36 +233,163 @@ function identifyVisitor(): void {
 
   const visitorId = readOrCreateVisitorId();
 
-  if (!visitorId) {
-    return;
-  }
-
   try {
-    window.umami?.identify(visitorId);
+    window.umami?.identify({ id: visitorId });
     identified = true;
   } catch {
     identified = false;
   }
 }
 
-function readOrCreateVisitorId(): string | undefined {
+function readOrCreateVisitorId(): string {
   try {
     const existingId = localStorage.getItem(visitorStorageKey);
 
-    if (existingId) {
-      return existingId;
+    if (existingId && isVisitorId(existingId)) {
+      return existingId.toLowerCase();
     }
 
     const visitorId = createVisitorId();
     localStorage.setItem(visitorStorageKey, visitorId);
     return visitorId;
   } catch {
-    return undefined;
+    return readOrCreateFallbackVisitorId();
   }
 }
 
 function createVisitorId(): string {
-  return crypto.randomUUID();
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  return formatUuid(bytes);
+}
+
+function readOrCreateFallbackVisitorId(): string {
+  fallbackVisitorId ??= createVisitorId();
+  return fallbackVisitorId;
+}
+
+function isVisitorId(value: string): boolean {
+  return visitorIdPattern.test(value);
+}
+
+function formatUuid(bytes: Uint8Array): string {
+  const parts = [...bytes].map((byte) => byte.toString(16).padStart(2, '0'));
+
+  return [
+    parts.slice(0, 4).join(''),
+    parts.slice(4, 6).join(''),
+    parts.slice(6, 8).join(''),
+    parts.slice(8, 10).join(''),
+    parts.slice(10, 16).join(''),
+  ].join('-');
+}
+
+function reservePageView(url: string): boolean {
+  return updateUsageState((state, now) => {
+    const lastPageViewAt = state.lastPageViews[url] || 0;
+    if (now - lastPageViewAt < samePageViewCooldownMs) {
+      return false;
+    }
+
+    state.lastPageViews[url] = now;
+    return true;
+  });
+}
+
+function reserveEvent(name: string): boolean {
+  return updateUsageState((state, now) => {
+    if (
+      !hasBucketCapacity(state, 'event:*', maxEventsPerWindow, eventWindowMs, now) ||
+      !hasBucketCapacity(state, `event:${name}`, maxSameEventPerWindow, eventWindowMs, now)
+    ) {
+      return false;
+    }
+
+    consumeBucket(state, 'event:*', eventWindowMs, now);
+    consumeBucket(state, `event:${name}`, eventWindowMs, now);
+    return true;
+  });
+}
+
+function updateUsageState(mutator: (state: UsageState, now: number) => boolean): boolean {
+  const now = Date.now();
+
+  try {
+    const state = normalizeUsageState(readUsageState(), now);
+    const allowed = mutator(state, now);
+
+    if (allowed) {
+      localStorage.setItem(usageStorageKey, JSON.stringify(state));
+    }
+
+    return allowed;
+  } catch {
+    fallbackUsageState = normalizeUsageState(fallbackUsageState, now);
+    return mutator(fallbackUsageState, now);
+  }
+}
+
+function readUsageState(): UsageState {
+  const raw = localStorage.getItem(usageStorageKey);
+
+  if (!raw) {
+    return createUsageState();
+  }
+
+  return JSON.parse(raw) as UsageState;
+}
+
+function normalizeUsageState(state: UsageState, now: number): UsageState {
+  const recent = Object.fromEntries(
+    Object.entries(state.recent || {}).filter(([, bucket]) => bucket.expiresAt > now),
+  );
+  const lastPageViews = Object.fromEntries(
+    Object.entries(state.lastPageViews || {}).filter(([, timestamp]) => now - timestamp < samePageViewCooldownMs),
+  );
+
+  return {
+    lastPageViews,
+    recent,
+  };
+}
+
+function createUsageState(): UsageState {
+  return {
+    lastPageViews: {},
+    recent: {},
+  };
+}
+
+function hasBucketCapacity(state: UsageState, key: string, limit: number, windowMs: number, now: number): boolean {
+  return getActiveBucket(state, key, windowMs, now).count < limit;
+}
+
+function consumeBucket(state: UsageState, key: string, windowMs: number, now: number): void {
+  const bucket = getActiveBucket(state, key, windowMs, now);
+  bucket.count += 1;
+  state.recent[key] = bucket;
+}
+
+function getActiveBucket(state: UsageState, key: string, windowMs: number, now: number): UsageBucket {
+  const current = state.recent[key];
+  return current && current.expiresAt > now
+    ? current
+    : { count: 0, expiresAt: now + windowMs };
 }
 
 function failStatistics(): void {
