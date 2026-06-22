@@ -34,7 +34,7 @@ jobs:
       name: github-pages
     steps:
       - name: Checkout production
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
