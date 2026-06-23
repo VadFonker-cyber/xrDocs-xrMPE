@@ -28,7 +28,7 @@ jobs:
       name: github-pages
     steps:
       - name: Checkout production
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           path: production
@@ -36,7 +36,7 @@ jobs:
 
       - name: Checkout develop
         if: inputs.action == 'deploy'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: develop
           path: develop
