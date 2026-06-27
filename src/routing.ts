@@ -1,5 +1,10 @@
 import { docs, getDocsByLang, hasDocId, type Lang } from './docs';
 import { detectBrowserLang, readSavedLang, type AppState } from './state';
+import { isLocalAssetSrc as isLocalAssetSrcShared } from '../scripts/markdown-common.mjs';
+import {
+  buildDocUrl,
+  normalizeBasePath as normalizeBasePathShared,
+} from '../scripts/shared-utils.mjs';
 
 export type Route = {
   lang: Lang;
@@ -58,12 +63,7 @@ export function readRouteFromPath(pathname: string, lang: Lang = readSavedLang()
 }
 
 export function getDocUrl(id: string, basePathOverride = basePath): string {
-  if (id === 'index') {
-    return basePathOverride;
-  }
-
-  const encodedId = id.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return encodedId ? `${basePathOverride}${encodedId}/` : basePathOverride;
+  return buildDocUrl(id, basePathOverride);
 }
 
 export function getAssetUrl(src: string, basePathOverride = basePath): string {
@@ -75,7 +75,7 @@ export function getAssetUrl(src: string, basePathOverride = basePath): string {
 }
 
 export function isLocalAssetSrc(src: string): boolean {
-  return !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:)/i.test(src);
+  return isLocalAssetSrcShared(src);
 }
 
 export function navigateToLink(event: MouseEvent, link: HTMLAnchorElement, state: AppState, render: () => void): void {
@@ -105,13 +105,7 @@ export function navigateToLink(event: MouseEvent, link: HTMLAnchorElement, state
 }
 
 export function normalizeBasePath(value: string): string {
-  const normalized = value.replace(/^\/+|\/+$/g, '');
-
-  if (!normalized || value === './') {
-    return '/';
-  }
-
-  return `/${normalized}/`;
+  return normalizeBasePathShared(value);
 }
 
 export function stripBasePath(pathname: string): string {

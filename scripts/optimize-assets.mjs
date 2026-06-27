@@ -3,14 +3,18 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { listPublicFiles as listPublicFilesShared, slash } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicDir = path.join(rootDir, 'public');
+const generatedDir = path.join(rootDir, 'src', 'generated');
 const sourceIcon = path.join(rootDir, 'scripts', 'assets', 'xrdocs-icon.png');
 const cacheFile = path.join(publicDir, '.asset-cache.json');
-const cacheSchemaVersion = 2;
+const assetMetadataFile = path.join(generatedDir, 'asset-metadata.json');
+const cacheSchemaVersion = 3;
 const avifOptions = { lossless: true, effort: 9 };
 const avifSourceExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const rasterAssetExtensions = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp']);
 const avifSourcePriority = new Map([
   ['.png', 0],
   ['.jpg', 1],
@@ -101,7 +105,15 @@ const outputExists = async (outputPath) => {
   }
 };
 
-const slash = (value) => value.replaceAll(path.sep, '/');
+const removeFileIfExists = async (filePath) => {
+  try {
+    await fs.rm(filePath, { force: true });
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+};
 
 const getPublicRelativePath = (filePath) => slash(path.relative(publicDir, filePath));
 
@@ -110,33 +122,17 @@ const shouldSkipPublicDir = (dirPath) => {
   return relativePath === 'doc-content' || relativePath.startsWith('doc-content/');
 };
 
-const listPublicFiles = async (dirPath) => {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const files = [];
-
-  await Promise.all(
-    entries.map(async (entry) => {
-      const filePath = path.join(dirPath, entry.name);
-
-      if (entry.isDirectory()) {
-        if (!shouldSkipPublicDir(filePath)) {
-          files.push(...(await listPublicFiles(filePath)));
-        }
-
-        return;
-      }
-
-      if (entry.isFile()) {
-        files.push(filePath);
-      }
-    }),
-  );
-
-  return files;
-};
+const listOptimizablePublicFiles = () =>
+  listPublicFilesShared(fs, publicDir, {
+    joinPath: path.join,
+    shouldSkipDir: shouldSkipPublicDir,
+  });
 
 const isConvertibleRasterSource = (filePath) =>
   avifSourceExtensions.has(path.extname(filePath).toLowerCase());
+
+const isRasterAsset = (filePath) =>
+  rasterAssetExtensions.has(path.extname(filePath).toLowerCase());
 
 const getAvifOutputPath = (sourcePath) =>
   path.join(path.dirname(sourcePath), `${path.basename(sourcePath, path.extname(sourcePath))}.avif`);
@@ -144,9 +140,15 @@ const getAvifOutputPath = (sourcePath) =>
 const getSourcePriority = (sourcePath) =>
   avifSourcePriority.get(path.extname(sourcePath).toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
 
+const getTempOutputPath = (outputPath) =>
+  path.join(
+    path.dirname(outputPath),
+    `.${path.basename(outputPath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+
 const collectAvifOutputs = async () => {
   const outputMap = new Map();
-  const files = (await listPublicFiles(publicDir)).filter(isConvertibleRasterSource);
+  const files = (await listOptimizablePublicFiles()).filter(isConvertibleRasterSource);
 
   files.forEach((sourcePath) => {
     const outputPath = getAvifOutputPath(sourcePath);
@@ -161,6 +163,22 @@ const collectAvifOutputs = async () => {
   return Array.from(outputMap.values()).sort((a, b) =>
     a.relativeOutputPath.localeCompare(b.relativeOutputPath),
   );
+};
+
+const removeStaleAvifOutputs = async (cache, avifOutputs) => {
+  const expectedOutputs = new Set(avifOutputs.map((output) => output.relativeOutputPath));
+  const removals = [];
+
+  for (const [relativeOutputPath, cachedAsset] of Object.entries(cache.assets)) {
+    if (cachedAsset?.type !== 'avif' || expectedOutputs.has(relativeOutputPath)) {
+      continue;
+    }
+
+    removals.push(removeFileIfExists(path.join(publicDir, relativeOutputPath)));
+    delete cache.assets[relativeOutputPath];
+  }
+
+  await Promise.all(removals);
 };
 
 const optimizeIconOutput = async (output, sourceHash, cache) => {
@@ -206,43 +224,202 @@ const optimizeIconOutput = async (output, sourceHash, cache) => {
 
 const optimizeAvifOutput = async (output, cache) => {
   const sourceBuffer = await fs.readFile(output.sourcePath);
+  const sourceSize = sourceBuffer.byteLength;
   const sourceHash = hashValue(sourceBuffer);
   const cacheKey = hashValue(
     stableStringify({
       type: 'avif',
       version: cacheSchemaVersion,
       sourceHash,
+      source: getPublicRelativePath(output.sourcePath),
       format: 'avif',
       options: avifOptions,
     }),
   );
+  const cachedAsset = cache.assets[output.relativeOutputPath];
 
   if (
-    cache.assets[output.relativeOutputPath]?.cacheKey === cacheKey &&
+    cachedAsset?.cacheKey === cacheKey &&
+    cachedAsset?.status === 'generated' &&
     (await outputExists(output.outputPath))
   ) {
-    return { status: 'cached', relativeOutputPath: output.relativeOutputPath, type: 'avif' };
+    const avifSize = (await fs.stat(output.outputPath)).size;
+
+    if (avifSize < sourceSize) {
+      return {
+        status: 'cached',
+        relativeOutputPath: output.relativeOutputPath,
+        source: getPublicRelativePath(output.sourcePath),
+        type: 'avif',
+      };
+    }
+  }
+
+  if (cachedAsset?.cacheKey === cacheKey && cachedAsset?.status === 'skipped-larger') {
+    await removeFileIfExists(output.outputPath);
+    return {
+      status: 'skipped-larger',
+      relativeOutputPath: output.relativeOutputPath,
+      source: getPublicRelativePath(output.sourcePath),
+      type: 'avif',
+    };
   }
 
   const metadata = await sharp(sourceBuffer).metadata();
 
   if (metadata.pages && metadata.pages > 1) {
-    return { status: 'skipped', relativeOutputPath: output.relativeOutputPath, type: 'avif' };
+    await removeFileIfExists(output.outputPath);
+    cache.assets[output.relativeOutputPath] = {
+      cacheKey,
+      type: 'avif',
+      status: 'skipped',
+      reason: 'multi-page',
+      source: getPublicRelativePath(output.sourcePath),
+      sourceSize,
+      format: 'avif',
+      options: avifOptions,
+    };
+
+    return {
+      status: 'skipped',
+      relativeOutputPath: output.relativeOutputPath,
+      source: getPublicRelativePath(output.sourcePath),
+      type: 'avif',
+    };
   }
+
+  const tempOutputPath = getTempOutputPath(output.outputPath);
 
   await sharp(sourceBuffer)
     .avif(avifOptions)
-    .toFile(output.outputPath);
+    .toFile(tempOutputPath);
+
+  const avifSize = (await fs.stat(tempOutputPath)).size;
+
+  if (avifSize >= sourceSize) {
+    await Promise.all([
+      removeFileIfExists(tempOutputPath),
+      removeFileIfExists(output.outputPath),
+    ]);
+
+    cache.assets[output.relativeOutputPath] = {
+      cacheKey,
+      type: 'avif',
+      status: 'skipped-larger',
+      source: getPublicRelativePath(output.sourcePath),
+      sourceSize,
+      avifSize,
+      format: 'avif',
+      options: avifOptions,
+    };
+
+    return {
+      status: 'skipped-larger',
+      relativeOutputPath: output.relativeOutputPath,
+      source: getPublicRelativePath(output.sourcePath),
+      type: 'avif',
+    };
+  }
+
+  await fs.rename(tempOutputPath, output.outputPath);
 
   cache.assets[output.relativeOutputPath] = {
     cacheKey,
     type: 'avif',
+    status: 'generated',
     source: getPublicRelativePath(output.sourcePath),
+    sourceSize,
+    avifSize,
     format: 'avif',
     options: avifOptions,
   };
 
-  return { status: 'generated', relativeOutputPath: output.relativeOutputPath, type: 'avif' };
+  return {
+    status: 'generated',
+    relativeOutputPath: output.relativeOutputPath,
+    source: getPublicRelativePath(output.sourcePath),
+    type: 'avif',
+  };
+};
+
+const readRasterAssetInfo = async (filePath) => {
+  const [stats, metadata] = await Promise.all([
+    fs.stat(filePath),
+    sharp(filePath).metadata(),
+  ]);
+
+  if (!metadata.width || !metadata.height) {
+    return undefined;
+  }
+
+  return {
+    path: getPublicRelativePath(filePath),
+    byteSize: stats.size,
+    width: metadata.width,
+    height: metadata.height,
+  };
+};
+
+const readRasterAssetInfos = async () => {
+  const files = (await listOptimizablePublicFiles()).filter(isRasterAsset);
+  const infos = await Promise.all(files.map(readRasterAssetInfo));
+  return infos
+    .filter(Boolean)
+    .sort((a, b) => a.path.localeCompare(b.path));
+};
+
+const buildPreferredPathMap = (infosByPath, cache) => {
+  const preferredPathBySource = new Map();
+
+  for (const [relativeOutputPath, cachedAsset] of Object.entries(cache.assets)) {
+    if (cachedAsset?.type !== 'avif' || cachedAsset.status !== 'generated' || !cachedAsset.source) {
+      continue;
+    }
+
+    const sourceInfo = infosByPath.get(cachedAsset.source);
+    const avifInfo = infosByPath.get(relativeOutputPath);
+
+    if (sourceInfo && avifInfo && avifInfo.byteSize < sourceInfo.byteSize) {
+      preferredPathBySource.set(cachedAsset.source, relativeOutputPath);
+    }
+  }
+
+  return preferredPathBySource;
+};
+
+const writeAssetMetadata = async () => {
+  const infos = await readRasterAssetInfos();
+  const infosByPath = new Map(infos.map((info) => [info.path, info]));
+  const preferredPathBySource = buildPreferredPathMap(infosByPath, cache);
+  const avifOriginalPath = new Map(
+    Object.entries(cache.assets)
+      .filter(([, cachedAsset]) =>
+        cachedAsset?.type === 'avif' &&
+        cachedAsset.status === 'generated' &&
+        cachedAsset.source
+      )
+      .map(([relativeOutputPath, cachedAsset]) => [relativeOutputPath, cachedAsset.source]),
+  );
+  const assets = Object.fromEntries(
+    infos.map((info) => [
+      info.path,
+      {
+        path: info.path,
+        originalPath: avifOriginalPath.get(info.path) || info.path,
+        preferredPath: preferredPathBySource.get(info.path) || info.path,
+        byteSize: info.byteSize,
+        width: info.width,
+        height: info.height,
+      },
+    ]),
+  );
+
+  await fs.mkdir(generatedDir, { recursive: true });
+  await fs.writeFile(
+    `${assetMetadataFile}.tmp`,
+    `${JSON.stringify({ version: 2, assets }, null, 2)}\n`,
+  );
+  await fs.rename(`${assetMetadataFile}.tmp`, assetMetadataFile);
 };
 
 const sourceBuffer = await fs.readFile(sourceIcon);
@@ -253,6 +430,7 @@ const iconResults = await Promise.all(
   iconOutputs.map((output) => optimizeIconOutput(output, iconSourceHash, cache)),
 );
 const avifOutputs = await collectAvifOutputs();
+await removeStaleAvifOutputs(cache, avifOutputs);
 const avifResults = await Promise.all(
   avifOutputs.map((output) => optimizeAvifOutput(output, cache)),
 );
@@ -260,13 +438,15 @@ const results = [...iconResults, ...avifResults];
 
 await fs.writeFile(`${cacheFile}.tmp`, `${JSON.stringify(cache, null, 2)}\n`);
 await fs.rename(`${cacheFile}.tmp`, cacheFile);
+await writeAssetMetadata();
 
 const generatedCount = results.filter((result) => result.status === 'generated').length;
 const cachedCount = results.filter((result) => result.status === 'cached').length;
 const skippedCount = results.filter((result) => result.status === 'skipped').length;
+const skippedLargerCount = results.filter((result) => result.status === 'skipped-larger').length;
 const iconCount = results.filter((result) => result.type === 'icon').length;
 const avifCount = results.filter((result) => result.type === 'avif').length;
 
 console.log(
-  `Optimized ${results.length} image assets (${iconCount} icons, ${avifCount} AVIF): ${generatedCount} generated, ${cachedCount} cached, ${skippedCount} skipped.`,
+  `Optimized ${results.length} image assets (${iconCount} icons, ${avifCount} AVIF): ${generatedCount} generated, ${cachedCount} cached, ${skippedCount} skipped, ${skippedLargerCount} skipped larger.`,
 );

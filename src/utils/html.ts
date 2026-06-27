@@ -1,26 +1,19 @@
-const HTML_ESCAPES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#039;',
-};
+import {
+  escapeHtml as escapeHtmlShared,
+  escapeRegExp as escapeRegExpShared,
+  splitAssetSrc as splitAssetSrcShared,
+} from '../../scripts/markdown-common.mjs';
 
 export function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
+  return escapeHtmlShared(value);
 }
 
 export function splitAssetSrc(src: string): { path: string; suffix: string } {
-  const match = src.match(/^([^?#]+)([?#].*)?$/);
-
-  return {
-    path: match?.[1] || src,
-    suffix: match?.[2] || '',
-  };
+  return splitAssetSrcShared(src);
 }
 
 export function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escapeRegExpShared(value);
 }
 
 export function clamp(value: number, min: number, max: number): number {

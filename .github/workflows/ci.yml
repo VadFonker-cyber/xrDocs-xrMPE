@@ -2,6 +2,24 @@ name: CI
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - '.npmrc'
+      - '.nvmrc'
+      - 'docs/**'
+      - 'index.html'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'public/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+
+env:
+  NPM_CONFIG_AUDIT: false
+  NPM_CONFIG_FUND: false
+  NPM_CONFIG_PREFER_OFFLINE: true
 
 permissions:
   contents: read

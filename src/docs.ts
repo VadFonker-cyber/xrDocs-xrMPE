@@ -1,4 +1,8 @@
 import docsManifest from './generated/docs-manifest.json';
+import {
+  compareDocs as compareDocsShared,
+  findNavNodePath as findNavNodePathShared,
+} from '../scripts/shared-utils.mjs';
 
 export type Lang = 'ru' | 'en';
 
@@ -51,21 +55,8 @@ for (const doc of docs) {
   _docIds.add(doc.id);
 }
 
-// Keep in sync with scripts/content-model.mjs for generated manifest ordering.
 export function compareDocs(a: Doc, b: Doc): number {
-  if (a.lang !== b.lang) {
-    return a.lang.localeCompare(b.lang);
-  }
-
-  if (a.order !== b.order) {
-    return a.order - b.order;
-  }
-
-  if (a.section !== b.section) {
-    return a.section.localeCompare(b.section, a.lang);
-  }
-
-  return a.title.localeCompare(b.title, a.lang);
+  return compareDocsShared(a, b);
 }
 
 export function getDocsByLang(lang: Lang): Doc[] {
@@ -85,29 +76,5 @@ export function hasDocId(id: string): boolean {
 }
 
 export function findNavNodePath(lang: Lang, id: string): NavNode[] {
-  for (const section of navTree[lang] || []) {
-    const path = findNodePath(section.children, id);
-
-    if (path.length) {
-      return path;
-    }
-  }
-
-  return [];
-}
-
-function findNodePath(nodes: NavNode[], id: string): NavNode[] {
-  for (const node of nodes) {
-    if (node.id === id) {
-      return [node];
-    }
-
-    const childPath = findNodePath(node.children, id);
-
-    if (childPath.length) {
-      return [node, ...childPath];
-    }
-  }
-
-  return [];
+  return findNavNodePathShared(navTree, lang, id);
 }

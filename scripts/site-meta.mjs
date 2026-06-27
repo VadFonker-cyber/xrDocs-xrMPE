@@ -1,13 +1,6 @@
-export const siteName = 'xrDocs';
-export const githubUrl = 'https://github.com/VadFonker-cyber/xrDocs-xrMPE';
+import { createRequire } from 'node:module';
 
-export const siteMeta = {
-  ru: {
-    description: 'Документация по моддингу S.T.A.L.K.E.R. для xrMPE.',
-    locale: 'ru_RU',
-  },
-  en: {
-    description: 'S.T.A.L.K.E.R. modding documentation for xrMPE.',
-    locale: 'en_US',
-  },
-};
+const require = createRequire(import.meta.url);
+const siteMetaData = require('../src/site-meta.json');
+
+export const { siteName, githubUrl, siteMeta } = siteMetaData;

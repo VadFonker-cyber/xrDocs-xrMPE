@@ -3,7 +3,9 @@ import { compareDocs, getDocByKey, type Doc, type Lang } from './docs';
 import { getLabel } from './locales';
 import { getAssetUrl, getDocUrl } from './routing';
 import { collectEvent } from './statistics';
+import { debounce } from './utils/debounce';
 import { escapeHtml, escapeRegExp } from './utils/html';
+import { normalizeSearch } from './utils/search';
 
 type SearchResult = {
   doc: Doc;
@@ -11,34 +13,42 @@ type SearchResult = {
   excerpt: string;
 };
 
-type SearchIndexEntry = {
+type RawSearchIndexEntry = {
   id: string;
   lang: Lang;
   path: string;
   title: string;
   section: string;
   text: string;
-  searchText?: string;
-  searchTitle?: string;
-  searchSection?: string;
+};
+
+type NormalizedSearchEntry = RawSearchIndexEntry & {
+  searchText: string;
+  searchTitle: string;
+  searchSection: string;
 };
 
 type SearchIndex = {
-  docs: SearchIndexEntry[];
+  docs: RawSearchIndexEntry[];
 };
 
-let searchStatisticsTimer: number | undefined;
 let lastCollectedSearch = '';
-let searchIndexPromise: Promise<Map<Lang, SearchIndexEntry[]>> | undefined;
-let searchEntriesByLang: Map<Lang, SearchIndexEntry[]> | undefined;
+let cachedHighlighterKey = '';
+let cachedHighlighter: ((value: string) => string) | undefined;
+const searchIndexPromises = new Map<Lang, Promise<NormalizedSearchEntry[]>>();
+const searchEntriesByLang = new Map<Lang, NormalizedSearchEntry[]>();
 
-export async function loadSearchIndex(): Promise<Map<Lang, SearchIndexEntry[]>> {
-  if (searchEntriesByLang) {
-    return searchEntriesByLang;
+export async function loadSearchIndex(lang: Lang): Promise<NormalizedSearchEntry[]> {
+  const cachedEntries = searchEntriesByLang.get(lang);
+
+  if (cachedEntries) {
+    return cachedEntries;
   }
 
-  if (!searchIndexPromise) {
-    searchIndexPromise = fetch(getAssetUrl('search-index.json'), { cache: 'force-cache' })
+  let promise = searchIndexPromises.get(lang);
+
+  if (!promise) {
+    promise = fetch(getAssetUrl(`search-index.${lang}.json`), { cache: 'force-cache' })
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Search index request failed with ${response.status}.`);
@@ -47,12 +57,16 @@ export async function loadSearchIndex(): Promise<Map<Lang, SearchIndexEntry[]>> 
         return response.json() as Promise<SearchIndex>;
       })
       .then((index) => {
-        searchEntriesByLang = partitionSearchEntriesByLang(index.docs);
-        return searchEntriesByLang;
+        const entries = index.docs
+          .filter((entry) => entry.lang === lang)
+          .map(normalizeSearchEntry);
+        searchEntriesByLang.set(lang, entries);
+        return entries;
       });
+    searchIndexPromises.set(lang, promise);
   }
 
-  return searchIndexPromise;
+  return promise;
 }
 
 export async function renderSearchResults(
@@ -62,13 +76,13 @@ export async function renderSearchResults(
   request: number,
   getCurrentRequest: () => number,
 ): Promise<void> {
-  const entriesByLang = searchEntriesByLang || await loadSearchIndex();
+  const entries = searchEntriesByLang.get(context.state.lang) ?? await loadSearchIndex(context.state.lang);
 
   if (request !== getCurrentRequest() || query !== context.state.search.trim()) {
     return;
   }
 
-  const results = getSearchResults(query, entriesByLang.get(context.state.lang) ?? [], context.state.lang);
+  const results = getSearchResults(query, entries, context.state.lang);
   scheduleSearchStatistics(context, query, results.length);
 
   if (!results.length) {
@@ -98,11 +112,7 @@ export async function renderSearchResults(
   `;
 }
 
-export function normalizeSearch(value: string, lang: Lang): string {
-  return value.toLocaleLowerCase(lang).replace(/\s+/g, ' ').trim();
-}
-
-function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang): SearchResult[] {
+function getSearchResults(query: string, entries: NormalizedSearchEntry[], lang: Lang): SearchResult[] {
   const normalizedQuery = normalizeSearch(query, lang);
   const terms = normalizedQuery.split(/\s+/).filter(Boolean);
 
@@ -118,9 +128,9 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
         return undefined;
       }
 
-      const title = getEntryTitle(entry);
-      const section = getEntrySection(entry);
-      const content = getSearchEntryText(entry);
+      const title = entry.searchTitle;
+      const section = entry.searchSection;
+      const content = entry.searchText;
       let score = 0;
 
       for (const term of terms) {
@@ -148,27 +158,10 @@ function getSearchResults(query: string, entries: SearchIndexEntry[], lang: Lang
     .sort((a, b) => b.score - a.score || compareDocs(a.doc, b.doc));
 }
 
-function partitionSearchEntriesByLang(entries: SearchIndexEntry[]): Map<Lang, SearchIndexEntry[]> {
-  const map = new Map<Lang, SearchIndexEntry[]>();
-
-  for (const entry of entries) {
-    const langEntries = map.get(entry.lang);
-
-    if (langEntries) {
-      langEntries.push(entry);
-    } else {
-      map.set(entry.lang, [entry]);
-    }
-  }
-
-  return map;
-}
-
-function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {
+function createExcerpt(entry: NormalizedSearchEntry, terms: string[]): string {
   const text = entry.text;
-  const normalized = normalizeSearch(text, entry.lang);
   const firstMatch = terms
-    .map((term) => normalized.indexOf(term))
+    .map((term) => entry.searchText.indexOf(term))
     .filter((index) => index >= 0)
     .sort((a, b) => a - b)[0];
   const start = Math.max(0, (firstMatch ?? 0) - 70);
@@ -179,69 +172,62 @@ function createExcerpt(entry: SearchIndexEntry, terms: string[]): string {
   return `${prefix}${text.slice(start, end).trim()}${suffix}`;
 }
 
-function getSearchEntryText(entry: SearchIndexEntry): string {
-  if (!entry.searchText) {
-    entry.searchText = normalizeSearch(entry.text, entry.lang);
-  }
-
-  return entry.searchText;
-}
-
-function getEntryTitle(entry: SearchIndexEntry): string {
-  if (!entry.searchTitle) {
-    entry.searchTitle = normalizeSearch(entry.title, entry.lang);
-  }
-
-  return entry.searchTitle;
-}
-
-function getEntrySection(entry: SearchIndexEntry): string {
-  if (!entry.searchSection) {
-    entry.searchSection = normalizeSearch(entry.section, entry.lang);
-  }
-
-  return entry.searchSection;
+function normalizeSearchEntry(entry: RawSearchIndexEntry): NormalizedSearchEntry {
+  return {
+    ...entry,
+    searchText: normalizeSearch(entry.text, entry.lang),
+    searchTitle: normalizeSearch(entry.title, entry.lang),
+    searchSection: normalizeSearch(entry.section, entry.lang),
+  };
 }
 
 function buildHighlighter(query: string, lang: Lang): (value: string) => string {
+  const cacheKey = `${lang}:${query}`;
+
+  if (cacheKey === cachedHighlighterKey && cachedHighlighter) {
+    return cachedHighlighter;
+  }
+
   const terms = normalizeSearch(query, lang)
     .split(/\s+/)
     .filter(Boolean)
     .sort((a, b) => b.length - a.length)
     .map(escapeRegExp);
 
+  cachedHighlighterKey = cacheKey;
+
   if (!terms.length) {
-    return escapeHtml;
+    cachedHighlighter = escapeHtml;
+    return cachedHighlighter;
   }
 
   const pattern = new RegExp(`(${terms.join('|')})`, 'giu');
-  return (value: string) => escapeHtml(value).replace(pattern, '<mark>$1</mark>');
+  cachedHighlighter = (value: string) => escapeHtml(value).replace(pattern, '<mark>$1</mark>');
+  return cachedHighlighter;
 }
 
 function scheduleSearchStatistics(context: AppContext, query: string, resultCount: number): void {
   const normalizedQuery = query.trim();
 
-  if (searchStatisticsTimer !== undefined) {
-    window.clearTimeout(searchStatisticsTimer);
-    searchStatisticsTimer = undefined;
-  }
-
   if (normalizedQuery.length < 2) {
+    collectSearchStatistics.cancel();
     return;
   }
 
-  searchStatisticsTimer = window.setTimeout(() => {
-    const key = `${context.state.lang}:${normalizedQuery.toLocaleLowerCase(context.state.lang)}`;
-
-    if (key === lastCollectedSearch) {
-      return;
-    }
-
-    lastCollectedSearch = key;
-    collectEvent('search', {
-      lang: context.state.lang,
-      query_length: normalizedQuery.length,
-      results: resultCount,
-    });
-  }, 600);
+  collectSearchStatistics(context, normalizedQuery, resultCount);
 }
+
+const collectSearchStatistics = debounce((context: AppContext, normalizedQuery: string, resultCount: number) => {
+  const key = `${context.state.lang}:${normalizedQuery.toLocaleLowerCase(context.state.lang)}`;
+
+  if (key === lastCollectedSearch) {
+    return;
+  }
+
+  lastCollectedSearch = key;
+  collectEvent('search', {
+    lang: context.state.lang,
+    query_length: normalizedQuery.length,
+    results: resultCount,
+  });
+}, 600);
