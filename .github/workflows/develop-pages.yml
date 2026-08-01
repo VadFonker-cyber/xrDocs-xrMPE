@@ -79,9 +79,9 @@ jobs:
       - name: Build production
         working-directory: production
         env:
-          SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/
+          SITE_URL: https://vadphonker.github.io/xrDocs-xrMPE/
           VITE_BASE_PATH: /xrDocs-xrMPE/
-          VITE_UMAMI_DOMAINS: vadfonker-cyber.github.io
+          VITE_UMAMI_DOMAINS: vadphonker.github.io
           VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
           VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: npm run build
@@ -108,9 +108,9 @@ jobs:
         env:
           NOINDEX: true
           SKIP_GIT_UPDATED_AT: true
-          SITE_URL: https://vadfonker-cyber.github.io/xrDocs-xrMPE/develop/
+          SITE_URL: https://vadphonker.github.io/xrDocs-xrMPE/develop/
           VITE_BASE_PATH: /xrDocs-xrMPE/develop/
-          VITE_UMAMI_DOMAINS: vadfonker-cyber.github.io
+          VITE_UMAMI_DOMAINS: vadphonker.github.io
           VITE_UMAMI_SCRIPT_URL: ${{ secrets.VITE_UMAMI_SCRIPT_URL }}
           VITE_UMAMI_WEBSITE_ID: ${{ secrets.VITE_UMAMI_WEBSITE_ID }}
         run: npm run build
@@ -132,7 +132,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ inputs.action == 'deploy' && 'https://vadfonker-cyber.github.io/xrDocs-xrMPE/develop/' || steps.deployment.outputs.page_url }}
+      url: ${{ inputs.action == 'deploy' && 'https://vadphonker.github.io/xrDocs-xrMPE/develop/' || steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: build
