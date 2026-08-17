@@ -3,17 +3,13 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
+      interval: "cron"
+      cronjob: "0 9 * * 1,5"
       timezone: "Europe/Moscow"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
       include: "scope"
-    labels:
-      - "dependencies"
-      - "npm"
     groups:
       npm-minor-and-patch:
         applies-to: "version-updates"
@@ -24,14 +20,10 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
+      interval: "cron"
+      cronjob: "0 9 * * 1,5"
       timezone: "Europe/Moscow"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
       include: "scope"
-    labels:
-      - "dependencies"
-      - "github-actions"
