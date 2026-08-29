@@ -12,3 +12,12 @@ type ShellTemplateOptions = {
 };
 
 export function renderShellHtml(options: ShellTemplateOptions): string;
+
+type NotFoundArticleOptions = {
+  title: string;
+  message: string;
+  homeLink: string;
+  homeUrl: string;
+};
+
+export function renderNotFoundArticle(options: NotFoundArticleOptions): string;

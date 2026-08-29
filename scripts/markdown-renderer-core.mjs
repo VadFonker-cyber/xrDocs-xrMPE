@@ -1,7 +1,4 @@
 import {
-  CHECK_ICON_SVG,
-  COPY_ICON_SVG,
-  ERROR_ICON_SVG,
   buildTocTree,
   escapeHtml,
   generateHeadingId,
@@ -138,9 +135,11 @@ export function createMarkdownRenderer({
       `<div class="code-block">` +
       `<pre><code${className}>${content}</code></pre>` +
       `<button class="code-copy-btn" type="button" aria-label="${copyLabel}" title="${copyLabel}" data-label-copy="${copyLabel}" data-label-copied="${copiedLabel}" data-label-failed="${failedLabel}">` +
-      `<span class="code-copy-icon code-copy-icon-copy" aria-hidden="true">${COPY_ICON_SVG}</span>` +
-      `<span class="code-copy-icon code-copy-icon-check" aria-hidden="true">${CHECK_ICON_SVG}</span>` +
-      `<span class="code-copy-icon code-copy-icon-error" aria-hidden="true">${ERROR_ICON_SVG}</span>` +
+      // Icons are drawn by CSS (mask-image) from styles.css — keeping SVG
+      // markup out of every code block saves ~1.7 KB per rendered fence.
+      `<span class="code-copy-icon code-copy-icon-copy" aria-hidden="true"></span>` +
+      `<span class="code-copy-icon code-copy-icon-check" aria-hidden="true"></span>` +
+      `<span class="code-copy-icon code-copy-icon-error" aria-hidden="true"></span>` +
       `</button>` +
       `</div>\n`
     );

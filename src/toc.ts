@@ -14,6 +14,8 @@ let currentTocItems: TocItem[] = [];
 // Cached flat item map — invalidated when the document changes
 let tocItemById: Map<string, TocItem> | undefined;
 let cachedCollapsibleIds: string[] | undefined;
+// Last link that received aria-current — enables O(1) active-link updates
+let lastActiveTocLink: HTMLAnchorElement | undefined;
 const headingHighlightTimers = new WeakMap<HTMLElement, number>();
 
 // Cached DOM references — valid for the lifetime of the shell
@@ -435,11 +437,22 @@ function updateActiveTocLink(context: AppContext): void {
     return;
   }
 
-  nav.querySelectorAll<HTMLAnchorElement>('a.toc-link').forEach((link) => {
-    if (link.dataset.headingId === context.state.activeHeadingId) {
-      link.setAttribute('aria-current', 'true');
-    } else {
-      link.removeAttribute('aria-current');
-    }
-  });
+  if (lastActiveTocLink?.isConnected) {
+    lastActiveTocLink.removeAttribute('aria-current');
+  }
+
+  lastActiveTocLink = undefined;
+
+  const activeId = context.state.activeHeadingId;
+
+  if (!activeId) {
+    return;
+  }
+
+  const link = nav.querySelector<HTMLAnchorElement>(`a.toc-link[data-heading-id="${CSS.escape(activeId)}"]`);
+
+  if (link) {
+    link.setAttribute('aria-current', 'true');
+    lastActiveTocLink = link;
+  }
 }

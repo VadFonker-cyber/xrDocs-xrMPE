@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import { readContentModel } from './content-model.mjs';
 import { escapeHtml, escapeRegExp } from './markdown-shared.mjs';
 import { githubUrl, siteMeta, siteName } from './site-meta.mjs';
-import { buildDocUrl, findNavNodePath, getDocKey, getNavNodeKey, normalizeBasePath, slash } from './shared-utils.mjs';
-import { renderShellHtml } from './shell-template.mjs';
+import { buildDocUrl, defaultBasePath, defaultSiteUrl, findNavNodePath, getDocKey, getNavNodeKey, normalizeBasePath, slash } from './shared-utils.mjs';
+import { renderNotFoundArticle, renderShellHtml } from './shell-template.mjs';
 import { renderNavSections } from './nav-renderer.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,8 +15,8 @@ const docsDir = path.join(rootDir, 'docs');
 const distDir = path.join(rootDir, 'dist');
 const templatePath = path.join(distDir, 'index.html');
 const execFileAsync = promisify(execFile);
-const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
-const siteUrl = normalizeSiteUrl(process.env.SITE_URL || 'https://vadphonker.github.io/xrDocs-xrMPE/');
+const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || defaultBasePath);
+const siteUrl = normalizeSiteUrl(process.env.SITE_URL || defaultSiteUrl);
 const noindex = isTruthyEnv(process.env.NOINDEX);
 const skipGitUpdatedAt = isTruthyEnv(process.env.SKIP_GIT_UPDATED_AT);
 const labelsCache = new Map();
@@ -74,6 +74,7 @@ async function writePage(doc, canonicalPath, outputPath) {
   const title = `${doc.title} | ${siteName}`;
   const description = siteMeta[doc.lang].description;
   const canonicalUrl = toAbsoluteUrl(canonicalPath);
+  const ogImageUrl = toAbsoluteUrl('xrdocs-og.png');
   const body = await renderStaticBody(doc);
 
   const patches = [
@@ -81,9 +82,11 @@ async function writePage(doc, canonicalPath, outputPath) {
     { attribute: 'property', name: 'og:title', content: title },
     { attribute: 'property', name: 'og:description', content: description },
     { attribute: 'property', name: 'og:url', content: canonicalUrl },
+    { attribute: 'property', name: 'og:image', content: ogImageUrl },
     { attribute: 'property', name: 'og:locale', content: siteMeta[doc.lang].locale },
     { attribute: 'name', name: 'twitter:title', content: title },
     { attribute: 'name', name: 'twitter:description', content: description },
+    { attribute: 'name', name: 'twitter:image', content: ogImageUrl },
     ...(noindex ? [{ attribute: 'name', name: 'robots', content: 'noindex, nofollow' }] : []),
   ];
   const linkPatches = [{ rel: 'canonical', href: canonicalUrl }];
@@ -116,9 +119,11 @@ async function writeNotFoundPage(defaultDoc, outputPath) {
     { attribute: 'property', name: 'og:title', content: title },
     { attribute: 'property', name: 'og:description', content: description },
     { attribute: 'property', name: 'og:url', content: siteUrl },
+    { attribute: 'property', name: 'og:image', content: toAbsoluteUrl('xrdocs-og.png') },
     { attribute: 'property', name: 'og:locale', content: siteMeta[defaultDoc.lang].locale },
     { attribute: 'name', name: 'twitter:title', content: title },
     { attribute: 'name', name: 'twitter:description', content: description },
+    { attribute: 'name', name: 'twitter:image', content: toAbsoluteUrl('xrdocs-og.png') },
     { attribute: 'name', name: 'robots', content: 'noindex, nofollow' },
   ];
 
@@ -157,14 +162,12 @@ async function renderStaticBody(activeDoc, options = {}) {
 async function renderStaticNotFoundArticle(lang) {
   const copy = await readLabels(lang);
 
-  return `
-    <div class="not-found">
-      <p class="not-found-code">404</p>
-      <h1>${escapeHtml(copy['notFound.title'] || 'Page not found')}</h1>
-      <p>${escapeHtml(copy['notFound.message'] || '')}</p>
-      <a class="not-found-link" href="${getDocPath('index')}">${escapeHtml(copy['notFound.homeLink'] || 'Go to documentation home')}</a>
-    </div>
-  `;
+  return renderNotFoundArticle({
+    title: copy['notFound.title'] || 'Page not found',
+    message: copy['notFound.message'] || '',
+    homeLink: copy['notFound.homeLink'] || 'Go to documentation home',
+    homeUrl: getDocPath('index'),
+  });
 }
 
 function renderStaticNav(activeDoc) {

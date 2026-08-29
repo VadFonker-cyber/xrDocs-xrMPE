@@ -1,4 +1,4 @@
-import { escapeHtml } from './markdown-common.mjs';
+import { escapeHtml } from './string-utils.mjs';
 
 export function renderShellHtml({
   articleAttributes = '',
@@ -102,4 +102,19 @@ export function renderShellHtml({
 
 function label(copy, key, fallback = '') {
   return escapeHtml(copy[key] || fallback);
+}
+
+/**
+ * Shared 404 article markup — used by the prerender script (Node) and the SPA
+ * router (browser) so the not-found page renders identically in both paths.
+ */
+export function renderNotFoundArticle({ title, message, homeLink, homeUrl }) {
+  return `
+    <div class="not-found">
+      <p class="not-found-code">404</p>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+      <a class="not-found-link" href="${homeUrl}">${escapeHtml(homeLink)}</a>
+    </div>
+  `;
 }

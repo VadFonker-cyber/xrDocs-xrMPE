@@ -16,7 +16,7 @@ import {
   setInitialActiveHeadingFromToc,
 } from './toc';
 import { getLabel } from './locales';
-import { escapeHtml } from './utils/html';
+import { renderNotFoundArticle as renderNotFoundArticleHtml } from '../scripts/shell-template.mjs';
 import './styles.css';
 
 let lastCollectedPage = '';
@@ -326,12 +326,10 @@ function setNotFoundChromeHidden(hidden: boolean): void {
 }
 
 function renderNotFoundArticle(): string {
-  return `
-    <div class="not-found">
-      <p class="not-found-code">404</p>
-      <h1>${escapeHtml(getLabel(state.lang, 'notFound.title'))}</h1>
-      <p>${escapeHtml(getLabel(state.lang, 'notFound.message'))}</p>
-      <a class="not-found-link" href="${getDocUrl('index')}">${escapeHtml(getLabel(state.lang, 'notFound.homeLink'))}</a>
-    </div>
-  `;
+  return renderNotFoundArticleHtml({
+    title: getLabel(state.lang, 'notFound.title'),
+    message: getLabel(state.lang, 'notFound.message'),
+    homeLink: getLabel(state.lang, 'notFound.homeLink'),
+    homeUrl: getDocUrl('index'),
+  });
 }

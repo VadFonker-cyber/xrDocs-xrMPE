@@ -1,4 +1,4 @@
-import { escapeHtml } from './markdown-common.mjs';
+import { escapeHtml } from './string-utils.mjs';
 
 export function renderNavSections({
   activeAncestorKeys,

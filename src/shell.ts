@@ -6,6 +6,7 @@ import { basePath, getAssetUrl, navigateToLink, readRouteFromPath } from './rout
 import { loadSearchModule } from './search-loader';
 import { getNextThemePreference, getResolvedTheme } from './theme';
 import { getTocTitle, highlightHashTarget, highlightHeading, setActiveHeading, startTocResize, bindTocCollapseToggle } from './toc';
+import { debounce } from './utils/debounce';
 import { escapeHtml } from './utils/html';
 import type { ThemePreference } from './state';
 import { githubUrl } from './site-meta';
@@ -16,6 +17,10 @@ const codeCopyErrorFeedbackMs = 3000;
 const copyToastVisibleMs = 2400;
 const copyFeedbackFadeMs = 220;
 const copyToastFadeMs = 260;
+// Rendering the full nav/TOC on every keystroke is wasteful — the input state
+// updates immediately, only the re-render is debounced.
+const navSearchRenderDelayMs = 180;
+const tocSearchRenderDelayMs = 120;
 
 type ShellRefs = {
   layout: HTMLElement | null;
@@ -124,10 +129,11 @@ export function renderTopbarControls(context: AppContext, activeDoc?: Doc): void
 
 function bindShellEvents(context: AppContext): void {
   const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
+  const renderNavOnSearch = debounce(() => context.renderNav(), navSearchRenderDelayMs);
 
   searchInput?.addEventListener('input', (event) => {
     context.state.search = (event.currentTarget as HTMLInputElement).value;
-    context.renderNav();
+    renderNavOnSearch();
   });
 
   searchInput?.addEventListener('focus', () => {
@@ -240,9 +246,11 @@ function bindShellEvents(context: AppContext): void {
     }
   });
 
+  const renderTocOnSearch = debounce(() => context.renderToc(), tocSearchRenderDelayMs);
+
   document.querySelector<HTMLInputElement>('#tocSearchInput')?.addEventListener('input', (event) => {
     context.state.tocQuery = (event.currentTarget as HTMLInputElement).value;
-    context.renderToc();
+    renderTocOnSearch();
   });
 
   document.querySelector<HTMLElement>('#tocNav')?.addEventListener('click', (event) => {

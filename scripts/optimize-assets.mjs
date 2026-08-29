@@ -12,7 +12,11 @@ const sourceIcon = path.join(rootDir, 'scripts', 'assets', 'xrdocs-icon.png');
 const cacheFile = path.join(publicDir, '.asset-cache.json');
 const assetMetadataFile = path.join(generatedDir, 'asset-metadata.json');
 const cacheSchemaVersion = 3;
-const avifOptions = { lossless: true, effort: 9 };
+// Lossy AVIF (q62/e5) encodes orders of magnitude faster than lossless e9
+// (~5x on real screenshots) and produces 5-6x smaller files. Lossless AVIF
+// regularly LOSES to the source PNG on UI screenshots and was discarded as
+// "skipped-larger" in 9 of 14 cases, wasting up to a minute of cold-build time.
+const avifOptions = { quality: 62, effort: 5 };
 const avifSourceExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const rasterAssetExtensions = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp']);
 const avifSourcePriority = new Map([
@@ -57,6 +61,13 @@ const iconOutputs = [
     options: { compressionLevel: 9, palette: true },
   },
 ];
+
+// Icon thumbnails generated from scripts/assets/xrdocs-icon.png (favicon,
+// brand marks, OG image). They are tiny UI chrome — AVIF twins of them were
+// either discarded as skipped-larger or shipped into dist unreferenced.
+const iconOutputRelativePaths = new Set(
+  iconOutputs.map((output) => slash(path.relative(publicDir, output.path))),
+);
 
 const stableStringify = (value) => {
   if (Array.isArray(value)) {
@@ -137,6 +148,12 @@ const isRasterAsset = (filePath) =>
 const getAvifOutputPath = (sourcePath) =>
   path.join(path.dirname(sourcePath), `${path.basename(sourcePath, path.extname(sourcePath))}.avif`);
 
+const iconOutputAvifRelativePaths = new Set(
+  iconOutputs
+    .filter((output) => avifSourceExtensions.has(path.extname(output.path).toLowerCase()))
+    .map((output) => slash(path.relative(publicDir, getAvifOutputPath(output.path)))),
+);
+
 const getSourcePriority = (sourcePath) =>
   avifSourcePriority.get(path.extname(sourcePath).toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
 
@@ -148,7 +165,9 @@ const getTempOutputPath = (outputPath) =>
 
 const collectAvifOutputs = async () => {
   const outputMap = new Map();
-  const files = (await listOptimizablePublicFiles()).filter(isConvertibleRasterSource);
+  const files = (await listOptimizablePublicFiles())
+    .filter(isConvertibleRasterSource)
+    .filter((filePath) => !iconOutputRelativePaths.has(getPublicRelativePath(filePath)));
 
   files.forEach((sourcePath) => {
     const outputPath = getAvifOutputPath(sourcePath);
@@ -174,6 +193,13 @@ const removeStaleAvifOutputs = async (cache, avifOutputs) => {
       continue;
     }
 
+    removals.push(removeFileIfExists(path.join(publicDir, relativeOutputPath)));
+    delete cache.assets[relativeOutputPath];
+  }
+
+  // Icon thumbnails never get AVIF twins — drop any leftovers from previous
+  // pipeline versions even when the cache no longer mentions them.
+  for (const relativeOutputPath of iconOutputAvifRelativePaths) {
     removals.push(removeFileIfExists(path.join(publicDir, relativeOutputPath)));
     delete cache.assets[relativeOutputPath];
   }

@@ -2,7 +2,8 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import { generateContentData } from './scripts/generate-content-data.mjs';
-import { debounce } from './src/utils/debounce';
+import { defaultBasePath } from './scripts/shared-utils.mjs';
+import { debounce } from './src/utils/debounce.ts';
 
 const markdownWatchPattern = /[/\\]docs[/\\](?:ru|en)[/\\].+\.md$/i;
 
@@ -135,24 +136,6 @@ function invalidateFileModules(server: ViteDevServer, file: string) {
 }
 
 export default defineConfig(({ command }) => ({
-  base: process.env.VITE_BASE_PATH || (command === 'build' ? '/xrDocs-xrMPE/' : './'),
+  base: process.env.VITE_BASE_PATH || (command === 'build' ? defaultBasePath : './'),
   plugins: [docsContentReloadPlugin(), omitPublicCachePlugin()],
-  build: {
-    rolldownOptions: {
-      output: {
-        codeSplitting: {
-          groups: [
-            {
-              name: 'markdown',
-              test: '/node_modules/markdown-it/',
-            },
-            {
-              name: 'highlight',
-              test: '/node_modules/highlight.js/',
-            },
-          ],
-        },
-      },
-    },
-  },
 }));

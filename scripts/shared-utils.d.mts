@@ -34,6 +34,8 @@ type ListPublicFilesOptions = {
   shouldSkipDir?(dirPath: string): boolean;
 };
 
+export declare const defaultBasePath: string;
+export declare const defaultSiteUrl: string;
 export function normalizeBasePath(value: string): string;
 export function slash(value: string): string;
 export function buildDocUrl(id: string, basePath: string): string;

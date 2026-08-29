@@ -6,9 +6,6 @@
 import { createRequire } from 'node:module';
 
 export {
-  CHECK_ICON_SVG,
-  COPY_ICON_SVG,
-  ERROR_ICON_SVG,
   buildTocTree,
   escapeHtml,
   escapeRegExp,

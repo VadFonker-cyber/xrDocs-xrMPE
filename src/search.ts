@@ -202,7 +202,13 @@ function buildHighlighter(query: string, lang: Lang): (value: string) => string 
   }
 
   const pattern = new RegExp(`(${terms.join('|')})`, 'giu');
-  cachedHighlighter = (value: string) => escapeHtml(value).replace(pattern, '<mark>$1</mark>');
+  // Split on the RAW text and escape each segment separately. Escaping first
+  // (the old behaviour) could match a term inside an HTML entity such as
+  // &amp; or &quot; and corrupt the markup while highlighting.
+  cachedHighlighter = (value: string) => value
+    .split(pattern)
+    .map((part, index) => (index % 2 === 1 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part)))
+    .join('');
   return cachedHighlighter;
 }
 

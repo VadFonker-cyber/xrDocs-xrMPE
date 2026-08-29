@@ -2,7 +2,7 @@ import {
   escapeHtml as escapeHtmlShared,
   escapeRegExp as escapeRegExpShared,
   splitAssetSrc as splitAssetSrcShared,
-} from '../../scripts/markdown-common.mjs';
+} from '../../scripts/string-utils.mjs';
 
 export function escapeHtml(value: string): string {
   return escapeHtmlShared(value);

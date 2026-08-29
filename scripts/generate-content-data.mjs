@@ -3,10 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readContentModel } from './content-model.mjs';
 import { renderDocContent } from './render-doc.mjs';
-import { flattenToc, getDocKey, listPublicFiles, normalizeBasePath, slash } from './shared-utils.mjs';
+import { flattenToc, getDocKey, defaultBasePath, listPublicFiles, normalizeBasePath, slash } from './shared-utils.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || '/xrDocs-xrMPE/');
+const basePath = normalizeBasePath(process.env.VITE_BASE_PATH || defaultBasePath);
 
 export async function generateContentData(options = {}) {
   const projectRoot = options.rootDir ? path.resolve(options.rootDir) : rootDir;

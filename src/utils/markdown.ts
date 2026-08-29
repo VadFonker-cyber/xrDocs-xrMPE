@@ -5,7 +5,7 @@ import type { Lang } from '../docs';
 import {
   generateHeadingId as generateHeadingIdShared,
   slugifyHeading as slugifyHeadingShared,
-} from '../../scripts/markdown-common.mjs';
+} from '../../scripts/string-utils.mjs';
 
 export function slugifyHeading(value: string, lang: Lang): string {
   return slugifyHeadingShared(value, lang);

@@ -1,3 +1,10 @@
+/**
+ * Single source of truth for deployment defaults. Override at build time with
+ * VITE_BASE_PATH / SITE_URL — these literals are only fallbacks.
+ */
+export const defaultBasePath = '/xrDocs-xrMPE/';
+export const defaultSiteUrl = 'https://vadphonker.github.io/xrDocs-xrMPE/';
+
 export function normalizeBasePath(value) {
   const normalized = (value || '').replace(/^\/+|\/+$/g, '');
 

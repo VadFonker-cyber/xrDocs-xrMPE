@@ -1,6 +1,6 @@
 import { docs, getDocsByLang, hasDocId, type Lang } from './docs';
 import { detectBrowserLang, readSavedLang, type AppState } from './state';
-import { isLocalAssetSrc as isLocalAssetSrcShared } from '../scripts/markdown-common.mjs';
+import { isLocalAssetSrc as isLocalAssetSrcShared } from '../scripts/string-utils.mjs';
 import {
   buildDocUrl,
   normalizeBasePath as normalizeBasePathShared,

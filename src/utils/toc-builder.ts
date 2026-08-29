@@ -1,5 +1,5 @@
 import type { TocItem } from '../types';
-import { buildTocTree as buildTocTreeShared } from '../../scripts/markdown-common.mjs';
+import { buildTocTree as buildTocTreeShared } from '../../scripts/string-utils.mjs';
 import { flattenToc as flattenTocShared } from '../../scripts/shared-utils.mjs';
 
 /**
